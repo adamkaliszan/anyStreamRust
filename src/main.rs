@@ -3,7 +3,6 @@ use std::fs::File;
 use std::io::prelude::*;
 
 use clap::Parser;
-use anyhow::Result;
 use crate::sim::model::class::{Class, StreamType};
 use crate::sim::simulator::statistics::{Macrostate, Statistics};
 
@@ -63,12 +62,17 @@ fn main() -> std::io::Result<()>
     let mut a = args.a_min;
 
     let mut file = File::open("results.txt")?;
+
+
     while a <= args.a_max
     {
         let tr_class =
             Class::new(StreamType::Poisson, StreamType::Poisson,
                        a as f64, 1f64, 1f64, 1f64);
 
+    /*
+     * Write Columns with class parameters
+     */
         write_sim_par(&tr_class, &mut file);
 
         let mut results = HashMap::new();
@@ -77,9 +81,18 @@ fn main() -> std::io::Result<()>
             results.insert(v, res);
         }
 
-        for itm in &results {
-            //itm.0
-        }
+    /*
+     * Write Probabilities
+     */
+        write_sim_prob(&results, &mut file);
+
+    /*
+     * Write Probabilities, new call intensities and serv intensities for v in <1..V>
+     */
+        write_sim_prob(&results, &mut file);
+        write_new_int(&results, &mut file);
+        write_end_int(&results, &mut file);
+
         a+= args.a_delta;
     }
 
@@ -102,9 +115,10 @@ fn main() -> std::io::Result<()>
 }
 
 fn write_sim_par(tr_class : &Class, output: &mut File) {
-    output.write_fmt(format_args!("{}\t{}\t{}\t{}\t{}\t{}\t{}", tr_class.get_a() ,
-                                   tr_class.get_str_new_id(), tr_class.get_str_new_desc(), tr_class.get_new_e2d2(),
-                                   tr_class.get_str_end_id(), tr_class.get_str_end_desc(), tr_class.get_end_e2d2()));
+    output.write_fmt(format_args!("{}\t{}\t{}\t{}\t{}\t{}\t{}", tr_class.get_a(),
+        tr_class.get_str_new_id(), tr_class.get_str_new_desc(), tr_class.get_new_e2d2(),
+        tr_class.get_str_end_id(), tr_class.get_str_end_desc(), tr_class.get_end_e2d2())).
+        expect("Write write_sim_par filed");
 }
 
 fn write_sim_prob(results: &HashMap<u32, Statistics>, output: &mut File) {
@@ -115,10 +129,17 @@ fn write_sim_prob(results: &HashMap<u32, Statistics>, output: &mut File) {
                 let val = itm.1;
 
                 for x in 0..val.v+1 {
-                    output.write_fmt(format_args!("\t{}", val.states[x].p));
+                    output.write_fmt(format_args!("\t{}", val.states[x].p)).
+                        expect("Write probabilities failed");
+
                 }
             }
-            None => {}
+            None => {
+                for _ in 0..v + 1 {
+                    output.write_fmt(format_args!("\t")).
+                        expect("Write probsbilities failed");
+                }
+            }
         }
     }
 }
@@ -131,10 +152,17 @@ fn write_new_int(results: &HashMap<u32, Statistics>, output: &mut File) {
                 let val = itm.1;
 
                 for x in 0..val.v+1 {
-                    output.write_fmt(format_args!("\t{}", val.states[x].out_new));
+                    output.write_fmt(format_args!("\t{}", val.states[x].out_new)).
+                        expect("Write New intensities failed");
                 }
             }
-            None => {}
+            None => {
+                for _ in 0..v + 1 {
+                    output.write_fmt(format_args!("\t")).
+                        expect("Write New intensities failed");
+                    ;
+                }
+            }
         }
     }
 }
@@ -147,10 +175,16 @@ fn write_end_int(results: &HashMap<u32, Statistics>, output: &mut File) {
                 let val = itm.1;
 
                 for x in 0..val.v+1 {
-                    output.write_fmt(format_args!("\t{}", val.states[x].out_end));
+                    output.write_fmt(format_args!("\t{}", val.states[x].out_end)).
+                        expect("Write End intensities failed");
                 }
             }
-            None => {}
+            None => {
+                for _ in 0..v+1 {
+                    output.write_fmt(format_args!("\t")).
+                        expect("Write End intensities failed");
+                }
+            }
         }
     }
 }

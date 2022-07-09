@@ -13,7 +13,6 @@ pub enum StreamType {
     Pareto
 }
 
-
 #[derive(Clone, Copy)]
 pub enum StreamOfEvents {
     Poisson (Exp<f64>),

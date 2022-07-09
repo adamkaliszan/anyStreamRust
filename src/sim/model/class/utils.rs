@@ -10,22 +10,22 @@ pub fn uniform_gen_min_max(intensity: f64, e2_d2: f64) -> (f64, f64) {
 }
 
 pub fn gamma_get_scale_shape(intensity: f64, e2_d2: f64) -> (f64, f64) {
-    let par_E = 1f64/intensity;
-    let par_D = par_E * par_E / e2_d2;
+    let par_e = 1f64/intensity;
+    let par_d = par_e * par_e / e2_d2;
 
-    let shape = par_D / par_E;
-    let scale = par_E/ shape;
+    let shape = par_d / par_e;
+    let scale = par_e / shape;
 
     (scale, shape)
 }
 
 pub fn pareto_get_scale_shape(intensity: f64, e2_d2: f64) -> (f64, f64) {
-    let par_E = 1f64/intensity;
-    let par_D = par_E * par_E / e2_d2;
+    let par_e = 1f64/intensity;
+    let par_d = par_e * par_e / e2_d2;
 
-    let tmp = f64::sqrt(1f64 + par_E * par_E / par_D);
+    let tmp = f64::sqrt(1f64 + par_e * par_e / par_d);
     let shape = 1f64 + tmp;
-    let scale = par_E * (shape - 1f64) * shape;
+    let scale = par_e * (shape - 1f64) * shape;
 
     (scale, shape)
 }
