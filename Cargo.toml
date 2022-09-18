@@ -1,9 +1,11 @@
 [package]
 name = "any_stream"
-package.authors = "Adam Kaliszan adam.kaliszan@gmail.com"
-package.description = "Single service loss system. Any type of arrival and service stream. This tool would provide height quality data for machine learning."
-version = "0.0.1"
+description = "Single service loss system. Any type of arrival and service stream. This tool would provide height quality data for system without product form solution. Results could be usefull as training data in machine learning."
+authors = ["Adam Kaliszan adam.kaliszan@gmail.com"]
+readme = "https://github.com/adamkaliszan/anyStreamRust/blob/master/README.md"
+version = "0.0.5"
 edition = "2021"
+keywords = ["simulator", "teletraffic enginery"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -12,7 +14,7 @@ edition = "2021"
 
 
 [dependencies]
-clap = { version = "3.1.15", features = ["derive"] }
+clap = { version = "3.2.22", features = ["derive"] }
 anyhow = "1.0"
 log = "0.4"
 science = "0.1.0"

@@ -5,6 +5,7 @@ use rand_distr::{Exp, Uniform, Gamma, Pareto};
 
 mod utils;
 
+use std::str::FromStr;
 #[derive(Clone, Copy)]
 pub enum StreamType {
     Poisson,
@@ -148,6 +149,21 @@ impl Class{
             StreamOfEvents::Gamma(distr)=> distr.sample(rng),
             StreamOfEvents::Pareto(distr)=> distr.sample(rng),
             //_ => panic!("Not supported distraibution {:?}", self.service_stream)
+        }
+    }
+}
+
+impl FromStr for StreamType {
+
+    type Err = ();
+
+    fn from_str(input: &str) -> Result<StreamType, Self::Err> {
+        match input {
+            "poisson" => Ok(StreamType::Poisson),
+            "uniform" => Ok(StreamType::Uniform),
+            "gamma"   => Ok(StreamType::Gamma),
+            "pareto"  => Ok(StreamType::Pareto),
+            _         => Err(()),
         }
     }
 }

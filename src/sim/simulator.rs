@@ -16,7 +16,12 @@ pub struct Simulator<'a> {
     pub rng: ThreadRng,
     pub no_of_lost_calls: u32,
     pub tr_class: &'a Class,
-    pub total_lost: u32
+    pub total_lost: u32,
+    pub total_serv: u32,
+
+    pub min_occurrance: u32,
+    pub analyze_states: bool,
+    pub check_cntr: i32
 }
 
 impl <'a>Simulator<'a>
@@ -28,7 +33,11 @@ impl <'a>Simulator<'a>
             rng: ThreadRng::default(),
             no_of_lost_calls: 0,
             tr_class: tr_class,
-            total_lost: 0
+            total_lost: 0,
+            total_serv: 0,
+            min_occurrance: 0,
+            analyze_states: false,
+            check_cntr: 100
         }
     }
 
@@ -47,15 +56,17 @@ impl <'a>Simulator<'a>
 
     pub fn simulate_with_statistics(&mut self, total_lost: u32) {
         self.group.statistics_init();
-        self.total_lost = 0;
+
+        self.min_occurrance = total_lost;
+        self.analyze_states = true;
+
         loop
         {
             let evnt = self.scheduler.get_process();
             evnt.execute(self);
 
-            //let mut next_check = 0;
-
-            if self.total_lost >= total_lost {
+            if self.end_simulation()
+            {
                 break;
             }
         }
@@ -64,4 +75,21 @@ impl <'a>Simulator<'a>
         self.group.statistics_preview()
     }
 
+    pub fn end_simulation(&mut self) -> bool {
+        let mut result = false;
+        if self.analyze_states
+        {
+            self.check_cntr -= 1;
+            if self.check_cntr <= 0
+            {
+                let min_ocur;
+                self.check_cntr = 100;
+                min_ocur = self.group.min_state_occurance();
+                result = min_ocur >= self.min_occurrance;
+            }
+        }
+        else { result =  self.no_of_lost_calls > 100000;}
+
+        result
+    }
 }

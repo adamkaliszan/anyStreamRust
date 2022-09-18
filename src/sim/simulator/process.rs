@@ -55,15 +55,18 @@ impl <'a> SimProcess<'a>  {
                 }
                 else {
                     system.total_lost += 1;
+                    system.total_serv += 1;
                 }
                 self.time = self.class.get_time_new_call(&mut system.rng);
                 true
             },
             State::WaitForService => {
                 system.group.call_end(last_time);
+                system.total_serv += 1;
                 false
             }
-        } {
+        }
+        {
             system.scheduler.add_process(self);
         }
         true

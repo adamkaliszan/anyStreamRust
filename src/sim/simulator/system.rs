@@ -74,4 +74,19 @@ impl Group {
         }
         panic!("No raw statistics");
     }
+
+    pub fn min_state_occurance(&self) -> u32 {
+        match &self.statistics {
+            Some(a) => {
+                match &a.states.iter().min_by(
+                    |&itm1, &itm2|
+                        (itm1.no_out_new + itm1.no_out_end).cmp(&(itm2.no_out_new + itm2.no_out_end)))
+                {
+                    Some(b) => b.no_out_new + b.no_out_end,
+                    None => 0
+                }
+            },
+            None => 0
+        }
+    }
 }
