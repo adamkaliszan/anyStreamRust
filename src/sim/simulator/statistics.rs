@@ -13,13 +13,11 @@ pub struct StatisticsRaw
     pub time_total: f64
 }
 
-
 pub struct Statistics
 {
     pub v: usize,
     pub states: Vec<Macrostate>
 }
-
 
 #[derive(Clone, Copy)]
 pub struct MacrostateRaw
@@ -91,10 +89,10 @@ impl StatisticsRaw {
 }
 
 impl Statistics {
-    pub fn new(v:usize) -> Self {
+    pub fn new(v: usize) -> Self {
         Statistics {
             v,
-            states: vec![Macrostate::new(); v+1]
+            states: vec![Macrostate::new(); v + 1]
         }
     }
 }
@@ -107,5 +105,4 @@ impl Macrostate {
             out_end: 0f64,
         }
     }
-
 }

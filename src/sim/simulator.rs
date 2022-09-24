@@ -2,6 +2,7 @@ pub mod scheduler;
 pub mod process;
 pub mod system;
 pub mod statistics;
+pub mod sim_result;
 
 use system::Group;
 use rand::rngs::ThreadRng;
