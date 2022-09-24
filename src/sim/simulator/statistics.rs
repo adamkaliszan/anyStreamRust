@@ -95,6 +95,39 @@ impl Statistics {
             states: vec![Macrostate::new(); v + 1]
         }
     }
+
+    pub fn statistics_proc(statistics: &Vec<Statistics>) -> (Statistics, Statistics) {
+        let mut res_avg = Statistics::new(statistics[0].v);
+        let mut res_dev = Statistics::new(statistics[0].v);
+        for stat_ser in statistics {
+            for (idx, stat_macr) in stat_ser.states.iter().enumerate() {
+                res_avg.states[idx].p += stat_macr.p;
+                res_avg.states[idx].out_new += stat_macr.out_new;
+                res_avg.states[idx].out_end += stat_macr.out_end;
+            }
+        }
+        for res_st in &mut res_avg.states {
+            res_st.p /= statistics.len() as f64;
+            res_st.out_new /= statistics.len() as f64;
+            res_st.out_end /= statistics.len() as f64;
+        }
+
+        for stat_ser in statistics {
+            for (idx, stat_macr) in stat_ser.states.iter().enumerate() {
+                res_dev.states[idx].p += (res_avg.states[idx].p - stat_macr.p).powi(2);
+                res_dev.states[idx].out_new += (res_avg.states[idx].out_new - stat_macr.out_new).powi(2);
+                res_dev.states[idx].out_end += (res_avg.states[idx].out_end - stat_macr.out_end).powi(2);
+            }
+        }
+
+        for res_st in &mut res_dev.states {
+            res_st.p = (res_st.p / statistics.len() as f64).sqrt();
+            res_st.out_new = (res_st.out_new / statistics.len() as f64).sqrt();
+            res_st.out_end = (res_st.out_end /statistics.len() as f64).sqrt();
+        }
+
+        (res_avg, res_dev)
+    }
 }
 
 impl Macrostate {

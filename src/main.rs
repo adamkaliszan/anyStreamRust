@@ -1,3 +1,5 @@
+extern crate core;
+
 use std::fs::File;
 use std::str::FromStr;
 
@@ -71,10 +73,11 @@ fn main() -> std::io::Result<()>
         // Make simulation experiments and write it
 
         let mut results = SimResult::new(&tr_class);
+
         //let mut results = BTreeMap::new();
         for v in 1..args.v+1 {
-            let res = sim::simulation(v, tr_class, 1000, 3);
-            results.items.insert(v, res);
+            let (avg, dev) = sim::simulation(v, tr_class, 1000, 3);
+            results.add(v, avg, dev);
         }
         results.write(&mut file);
 

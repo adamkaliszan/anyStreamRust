@@ -8,7 +8,7 @@ use crate::sim::simulator::statistics::Statistics;
 pub struct SimResult<'a>
 {
     pub tr_class: &'a Class,
-    pub items: BTreeMap<u32, Statistics>
+    pub items: BTreeMap<u32, (Statistics, Statistics)>
 }
 
 impl <'a> SimResult<'a> {
@@ -17,6 +17,9 @@ impl <'a> SimResult<'a> {
             tr_class: tr_class,
             items: BTreeMap::new()
         }
+    }
+    pub fn add(&mut self, v: u32, avg : Statistics, dev: Statistics) {
+        self.items.insert(v, (avg, dev));
     }
 
     pub fn write_header(v_max :u32, output: &mut File)
@@ -44,9 +47,30 @@ impl <'a> SimResult<'a> {
                     expect("Write header filed");
             }
         }
+
+        for v in 1..v_max+1 {
+            for n in 0..v+1 {
+                output.write_fmt(format_args!("\tδ p[{}]_{}", n, v)).
+                    expect("Write header filed");
+            }
+        }
+
+        for v in 1..v_max+1 {
+            for n in 0..v+1 {
+                output.write_fmt(format_args!("\tδ λ[{}]_{}", n, v)).
+                    expect("Write header filed");
+            }
+        }
+
+        for v in 1..v_max+1 {
+            for n in 0..v+1 {
+                output.write_fmt(format_args!("\tδ µ[{}]_{}", n, v)).
+                    expect("Write header filed");
+            }
+        }
+
         output.write_fmt(format_args!("\n")).
             expect("Write header filed");
-
     }
 
     pub fn write(& self, output: &mut File)
@@ -55,6 +79,9 @@ impl <'a> SimResult<'a> {
         self.write_sim_prob(output);
         self.write_new_int(output);
         self.write_end_int(output);
+        self.write_sim_prob_dev(output);
+        self.write_new_int_dev(output);
+        self.write_end_int_dev(output);
         output.write_fmt(format_args!("\n")).expect("I/O error");
     }
 
@@ -63,18 +90,39 @@ impl <'a> SimResult<'a> {
         for v in 1..v_max+1 {
             match self.items.get_key_value(&v) {
                 Option::Some(itm) => {
-                    let val = itm.1;
+                    let val_avg = &itm.1.0;
 
-                    for x in 0..val.v+1 {
-                        output.write_fmt(format_args!("\t{}", val.states[x].p)).
-                            expect("Write probabilities failed");
-
+                    for x in 0..val_avg.v+1 {
+                        output.write_fmt(format_args!("\t{}", val_avg.states[x].p)).
+                            expect("write_sim_prob failed");
                     }
                 }
                 None => {
                     for _ in 0..v + 1 {
                         output.write_fmt(format_args!("\t")).
-                            expect("Write probsbilities failed");
+                            expect("write_sim_prob failed");
+                    }
+                }
+            }
+        }
+    }
+
+    fn write_sim_prob_dev(& self, output: &mut File) {
+        let v_max = self.items.iter().map(|x|x.0).max().unwrap();
+        for v in 1..v_max+1 {
+            match self.items.get_key_value(&v) {
+                Option::Some(itm) => {
+                    let val_avg = &itm.1.1;
+
+                    for x in 0..val_avg.v+1 {
+                        output.write_fmt(format_args!("\t{}", val_avg.states[x].p)).
+                            expect("write_sim_prob_dev failed");
+                    }
+                }
+                None => {
+                    for _ in 0..v + 1 {
+                        output.write_fmt(format_args!("\t")).
+                            expect("write_sim_prob_dev failed");
                     }
                 }
             }
@@ -86,7 +134,7 @@ impl <'a> SimResult<'a> {
         for v in 1..v_max+1 {
             match self.items.get_key_value(&v) {
                 Option::Some(itm) => {
-                    let val = itm.1;
+                    let val = &itm.1.0;
 
                     for x in 0..val.v+1 {
                         output.write_fmt(format_args!("\t{}", val.states[x].out_new)).
@@ -103,12 +151,34 @@ impl <'a> SimResult<'a> {
         }
     }
 
+    fn write_new_int_dev(& self, output: &mut File) {
+        let v_max = self.items.iter().map(|x|x.0).max().unwrap();
+        for v in 1..v_max+1 {
+            match self.items.get_key_value(&v) {
+                Option::Some(itm) => {
+                    let val = &itm.1.1;
+
+                    for x in 0..val.v+1 {
+                        output.write_fmt(format_args!("\t{}", val.states[x].out_new)).
+                            expect("write_new_int_dev failed");
+                    }
+                }
+                None => {
+                    for _ in 0..v + 1 {
+                        output.write_fmt(format_args!("\t")).
+                            expect("write_new_int_dev failed");
+                    }
+                }
+            }
+        }
+    }
+
     fn write_end_int(& self, output: &mut File) {
         let v_max = self.items.iter().map(|x|x.0).max().unwrap();
         for v in 1..v_max+1 {
             match self.items.get_key_value(&v) {
                 Option::Some(itm) => {
-                    let val = itm.1;
+                    let val = &itm.1.0;
 
                     for x in 0..val.v+1 {
                         output.write_fmt(format_args!("\t{}", val.states[x].out_end)).
@@ -119,6 +189,28 @@ impl <'a> SimResult<'a> {
                     for _ in 0..v+1 {
                         output.write_fmt(format_args!("\t")).
                             expect("Write End intensities failed");
+                    }
+                }
+            }
+        }
+    }
+
+    fn write_end_int_dev(& self, output: &mut File) {
+        let v_max = self.items.iter().map(|x|x.0).max().unwrap();
+        for v in 1..v_max+1 {
+            match self.items.get_key_value(&v) {
+                Option::Some(itm) => {
+                    let val = &itm.1.1;
+
+                    for x in 0..val.v+1 {
+                        output.write_fmt(format_args!("\t{}", val.states[x].out_end)).
+                            expect("write_end_int_dev failed");
+                    }
+                }
+                None => {
+                    for _ in 0..v+1 {
+                        output.write_fmt(format_args!("\t")).
+                            expect("write_end_int_dev failed");
                     }
                 }
             }
