@@ -1,12 +1,6 @@
 use std::collections::BinaryHeap;
 
-//use crate::sim::model::class::*;
-//use crate::sim::simulator::system::*;
 use crate::sim::simulator::process::*;
-
-//use std::cmp::Ordering;
-//use rand_distr::num_traits::ToPrimitive;
-//use self::Ordering::*;
 
 #[derive(Clone)]
 pub struct Scheduler<'a>

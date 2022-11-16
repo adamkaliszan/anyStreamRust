@@ -34,12 +34,12 @@ struct Cli {
     a_delta: f64,
 
     /// Arrival stream type
-    #[clap(long, default_value="poisson")]
-    call_stream: String,
+    #[clap(long, default_value="poisson", multiple=true)]
+    call_stream: Vec<String>,
 
     /// Service stream type
-    #[clap(long, default_value="poisson")]
-    serv_stream: String,
+    #[clap(long, default_value="poisson", multiple=true)]
+    serv_stream: Vec<String>,
 
     /// Arrival stream parameters. ExpectedValue²/Variance²
     #[clap(long, default_value_t=1.0)]
@@ -62,26 +62,32 @@ fn main() -> std::io::Result<()>
     let mut file = File::create(args.output_path)?;
     SimResult::write_header(args.v, &mut file);
 
-    while a <= args.a_max
+    for cur_call_stream in &args.call_stream
     {
-        // Prepare Streams and write its params
-        let tr_class =
-            Class::new( StreamType::from_str(&args.call_stream).expect("Failed"),
-                        StreamType::from_str(&args.serv_stream).expect("Failed"),
-                        a, args.cs_e2_d2, 1f64, args.ss_e2_d2);
+        for cur_serv_stream in &args.serv_stream
+        {
+            while a <= args.a_max
+            {
+                // Prepare Streams and write its params
+                let tr_class =
+                    Class::new(StreamType::from_str(&cur_call_stream).expect("Failed"),
+                               StreamType::from_str(&cur_serv_stream).expect("Failed"),
+                               a, args.cs_e2_d2, 1f64, args.ss_e2_d2);
 
-        // Make simulation experiments and write it
+                // Make simulation experiments and write it
 
-        let mut results = SimResult::new(&tr_class);
+                let mut results = SimResult::new(&tr_class);
 
-        //let mut results = BTreeMap::new();
-        for v in 1..args.v+1 {
-            let (avg, dev) = sim::simulation(v, tr_class, 1000, 3);
-            results.add(v, avg, dev);
+                //let mut results = BTreeMap::new();
+                for v in 1..args.v + 1 {
+                    let (avg, dev) = sim::simulation(v, tr_class, 1000, 3);
+                    results.add(v, avg, dev);
+                }
+                results.write(&mut file);
+
+                a += args.a_delta;
+            }
         }
-        results.write(&mut file);
-
-        a+= args.a_delta;
     }
 
     println!("Done");
