@@ -1,11 +1,12 @@
 pub mod simulator;
 pub mod model;
 
-use rand_distr::num_traits::Pow;
 use crate::sim::model::class::*;
 
 use crate::sim::simulator::Simulator;
 use crate::sim::simulator::statistics::Statistics;
+
+//#![feature(map_first_last)]
 
 pub fn simulation(v: u32, tr_class:Class, total_lost: u32, no_of_ser: usize)
     -> (Statistics, Statistics)

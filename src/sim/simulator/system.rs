@@ -61,7 +61,7 @@ impl Group {
         }
     }
 
-    pub fn statistics_preview(&self) -> Statistics {
+    pub fn statistics_preview(&self, no_of_events:f64) -> Statistics {
         if let Some(stat) = &self.statistics {
             let total_time = stat.time_total;
 
@@ -69,7 +69,8 @@ impl Group {
                 v: self.v as usize,
                 states : stat.states.iter().map(
                     |x| x.get_macrostate_statistics(total_time)
-                ).collect()
+                ).collect(),
+                no_of_events
             };
         }
         panic!("No raw statistics");

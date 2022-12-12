@@ -1,4 +1,5 @@
 extern crate core;
+extern crate separator;
 
 use std::fs::File;
 use std::str::FromStr;
@@ -7,6 +8,7 @@ use clap::Parser;
 use crate::sim::model::class::{Class, StreamType};
 use crate::sim::simulator::sim_result::SimResult;
 
+use separator::Separatable;
 mod sim;
 
 #[derive(Parser, Debug)]
@@ -80,7 +82,9 @@ fn main() -> std::io::Result<()>
 
                 //let mut results = BTreeMap::new();
                 for v in 1..args.v + 1 {
+                    print!("Simulation a={} v={}", a, v);
                     let (avg, dev) = sim::simulation(v, tr_class, 1000, 3);
+                    println!(" no of events : {}", avg.no_of_events.separated_string());
                     results.add(v, avg, dev);
                 }
                 results.write(&mut file);

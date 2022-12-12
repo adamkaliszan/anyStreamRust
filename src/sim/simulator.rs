@@ -17,8 +17,8 @@ pub struct Simulator<'a> {
     pub rng: ThreadRng,
     pub no_of_lost_calls: u32,
     pub tr_class: &'a Class,
-    pub total_lost: u32,
-    pub total_serv: u32,
+    pub total_lost: u64,
+    pub total_serv: u64,
 
     pub min_occurrance: u32,
     pub analyze_states: bool,
@@ -66,6 +66,7 @@ impl <'a>Simulator<'a>
             let evnt = self.scheduler.get_process();
             evnt.execute(self);
 
+
             if self.end_simulation()
             {
                 break;
@@ -73,7 +74,7 @@ impl <'a>Simulator<'a>
         }
     }
     pub fn prepare_statistics(&self) -> Statistics {
-        self.group.statistics_preview()
+        self.group.statistics_preview((self.total_lost + self.total_serv) as f64)
     }
 
     pub fn end_simulation(&mut self) -> bool {

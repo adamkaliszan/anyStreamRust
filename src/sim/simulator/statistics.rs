@@ -16,7 +16,8 @@ pub struct StatisticsRaw
 pub struct Statistics
 {
     pub v: usize,
-    pub states: Vec<Macrostate>
+    pub states: Vec<Macrostate>,
+    pub no_of_events: f64
 }
 
 #[derive(Clone, Copy)]
@@ -92,7 +93,8 @@ impl Statistics {
     pub fn new(v: usize) -> Self {
         Statistics {
             v,
-            states: vec![Macrostate::new(); v + 1]
+            states: vec![Macrostate::new(); v + 1],
+            no_of_events: 0.0
         }
     }
 
@@ -105,12 +107,14 @@ impl Statistics {
                 res_avg.states[idx].out_new += stat_macr.out_new;
                 res_avg.states[idx].out_end += stat_macr.out_end;
             }
+            res_avg.no_of_events+= stat_ser.no_of_events;
         }
         for res_st in &mut res_avg.states {
             res_st.p /= statistics.len() as f64;
             res_st.out_new /= statistics.len() as f64;
             res_st.out_end /= statistics.len() as f64;
         }
+        res_avg.no_of_events = res_avg.no_of_events / statistics.len() as f64;
 
         for stat_ser in statistics {
             for (idx, stat_macr) in stat_ser.states.iter().enumerate() {
@@ -118,6 +122,7 @@ impl Statistics {
                 res_dev.states[idx].out_new += (res_avg.states[idx].out_new - stat_macr.out_new).powi(2);
                 res_dev.states[idx].out_end += (res_avg.states[idx].out_end - stat_macr.out_end).powi(2);
             }
+            res_dev.no_of_events += (res_avg.no_of_events - stat_ser.no_of_events).powi(2);
         }
 
         for res_st in &mut res_dev.states {
@@ -125,7 +130,7 @@ impl Statistics {
             res_st.out_new = (res_st.out_new / statistics.len() as f64).sqrt();
             res_st.out_end = (res_st.out_end /statistics.len() as f64).sqrt();
         }
-
+        res_dev.no_of_events = (res_dev.no_of_events / statistics.len() as f64).sqrt();
         (res_avg, res_dev)
     }
 }
