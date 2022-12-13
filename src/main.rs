@@ -1,8 +1,8 @@
-extern crate core;
 extern crate separator;
 
 use std::fs::File;
 use std::str::FromStr;
+use std::time::{Duration, Instant};
 
 use clap::Parser;
 use crate::sim::model::class::{Class, StreamType};
@@ -83,8 +83,12 @@ fn main() -> std::io::Result<()>
                 //let mut results = BTreeMap::new();
                 for v in 1..args.v + 1 {
                     print!("Simulation a={} v={}", a, v);
-                    let (avg, dev) = sim::simulation(v, tr_class, 1000, 3);
-                    println!(" no of events : {}", avg.no_of_events.separated_string());
+                    let start = Instant::now();
+                    let no_of_ser = 3;
+                    let (avg, dev) = sim::simulation(v, tr_class, 1000, no_of_ser);
+                    let duration = start.elapsed();
+                    let pefromance =  (avg.no_of_events * no_of_ser as f64) / duration.as_micros() as f64;
+                    println!(" performance {:.3} events/µs, no of events : {} ", pefromance, avg.no_of_events.round().separated_string());
                     results.add(v, avg, dev);
                 }
                 results.write(&mut file);
