@@ -1,0 +1,6 @@
+.git
+target
+.idea
+Cargo.lock
+results.txt
+

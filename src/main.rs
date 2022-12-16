@@ -1,12 +1,15 @@
 extern crate separator;
 
 use std::fs::File;
+use std::iter::Product;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
 use clap::Parser;
 use crate::sim::model::class::{Class, StreamType};
 use crate::sim::simulator::sim_result::SimResult;
+
+use cartesian::*;
 
 use separator::Separatable;
 mod sim;
@@ -64,37 +67,37 @@ fn main() -> std::io::Result<()>
     let mut file = File::create(args.output_path)?;
     SimResult::write_header(args.v, &mut file);
 
-    for cur_call_stream in &args.call_stream
+    let call_streams = args.call_stream.clone();
+    let serv_streams = args.serv_stream.clone();
+
+    for (cur_call_stream, cur_serv_stream) in cartesian!(call_streams.iter(), serv_streams.iter())
     {
-        for cur_serv_stream in &args.serv_stream
+        while a <= args.a_max
         {
-            while a <= args.a_max
-            {
-                // Prepare Streams and write its params
-                let tr_class =
-                    Class::new(StreamType::from_str(&cur_call_stream).expect("Failed"),
-                               StreamType::from_str(&cur_serv_stream).expect("Failed"),
-                               a, args.cs_e2_d2, 1f64, args.ss_e2_d2);
+            // Prepare Streams and write its params
+            let tr_class =
+                Class::new(StreamType::from_str(&cur_call_stream).expect("Failed"),
+                           StreamType::from_str(&cur_serv_stream).expect("Failed"),
+                           a, args.cs_e2_d2, 1f64, args.ss_e2_d2);
 
-                // Make simulation experiments and write it
+            // Make simulation experiments and write it
 
-                let mut results = SimResult::new(&tr_class);
+            let mut results = SimResult::new(&tr_class);
 
-                //let mut results = BTreeMap::new();
-                for v in 1..args.v + 1 {
-                    print!("Simulation a={} v={}", a, v);
-                    let start = Instant::now();
-                    let no_of_ser = 3;
-                    let (avg, dev) = sim::simulation(v, tr_class, 1000, no_of_ser);
-                    let duration = start.elapsed();
-                    let pefromance =  (avg.no_of_events * no_of_ser as f64) / duration.as_micros() as f64;
-                    println!(" performance {:.3} events/µs, no of events : {} ", pefromance, avg.no_of_events.round().separated_string());
-                    results.add(v, avg, dev);
-                }
-                results.write(&mut file);
-
-                a += args.a_delta;
+            //let mut results = BTreeMap::new();
+            for v in 1..args.v + 1 {
+                print!("Simulation a={} v={}", a, v);
+                let start = Instant::now();
+                let no_of_ser = 3;
+                let (avg, dev) = sim::simulation(v, tr_class, 1000, no_of_ser);
+                let duration = start.elapsed();
+                let pefromance =  (avg.no_of_events * no_of_ser as f64) / duration.as_micros() as f64;
+                println!(" performance {:.3} events/µs, no of events : {} ", pefromance, avg.no_of_events.round().separated_string());
+                results.add(v, avg, dev);
             }
+            results.write(&mut file);
+
+            a += args.a_delta;
         }
     }
 
