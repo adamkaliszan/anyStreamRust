@@ -55,10 +55,10 @@ impl <'a>Simulator<'a>
         }
     }
 
-    pub fn simulate_with_statistics(&mut self, total_lost: u32) {
+    pub fn simulate_with_statistics(&mut self, min_state_cntr: u32) {
         self.group.statistics_init();
 
-        self.min_occurrance = total_lost;
+        self.min_occurrance = min_state_cntr;
         self.analyze_states = true;
 
         loop
