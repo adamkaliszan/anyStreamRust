@@ -24,7 +24,7 @@ impl <'a> SimResult<'a> {
 
     pub fn write_header(v_max :u32, output: &mut File)
     {
-        output.write_fmt(format_args!("#A\tArrival Id\tArrival desc\tD²/E²\tServ Id\tServ desc\tD²/E²")).
+        output.write_fmt(format_args!("#A\tArrival Id\tArrival desc\tE²/D²\tServ Id\tServ desc\tE²/D²")).
             expect("Write header filed");
 
         for v in 1..v_max+1 {

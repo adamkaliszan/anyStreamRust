@@ -1,4 +1,5 @@
 extern crate separator;
+extern crate flot;
 
 use std::fs::File;
 use std::str::FromStr;
@@ -7,11 +8,9 @@ use std::time::Instant;
 use clap::Parser;
 use crate::sim::model::class::{Class, StreamType};
 use crate::sim::simulator::sim_result::SimResult;
-extern crate flot;
+
 use float_cmp::*;
-
 use cartesian::*;
-
 use separator::Separatable;
 mod sim;
 
@@ -83,7 +82,6 @@ struct Cli {
 fn main() -> std::io::Result<()>
 {
     let args = Cli::parse();
-    //let mut a = args.a_min;
 
     let mut file = File::create(args.output_path)?;
     SimResult::write_header(args.v, &mut file);
@@ -130,5 +128,4 @@ fn main() -> std::io::Result<()>
     println!("Done");
     Ok(())
 }
-
 
