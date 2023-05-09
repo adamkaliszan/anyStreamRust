@@ -39,7 +39,7 @@ struct Cli {
     a_delta: f64,
 
     /// Arrival stream type
-    #[clap(long, default_value="poisson", multiple=true)]
+    #[clap(long, default_value="uniform", multiple=true)]
     call_stream: Vec<String>,
 
     /// Service stream type
@@ -59,11 +59,11 @@ struct Cli {
     cs_e2_d2_delta: f64,
 
     /// Service stream parameters. ExpectedValue²/Variance² initial value
-    #[clap(long, default_value_t=3.0)]
+    #[clap(long, default_value_t=1.0)]
     ss_e2_d2_min: f64,
 
     /// Service stream parameters. ExpectedValue²/Variance² end value
-    #[clap(long, default_value_t=3.0)]
+    #[clap(long, default_value_t=1.0)]
     ss_e2_d2_max: f64,
 
     /// Service stream parameters. ExpectedValue²/Variance² increment
