@@ -1,15 +1,17 @@
 extern crate separator;
 extern crate flot;
 
+use std::collections::LinkedList;
 use std::fs::File;
 use std::str::FromStr;
+use std::thread;
+use std::thread::{JoinHandle, Thread};
 use std::time::Instant;
 
 use clap::Parser;
 use crate::sim::model::class::{Class, StreamType};
 use crate::sim::simulator::sim_result::SimResult;
 
-use float_cmp::*;
 use cartesian::*;
 use separator::Separatable;
 mod sim;
@@ -70,13 +72,22 @@ struct Cli {
     #[clap(long, default_value_t=1.0)]
     ss_e2_d2_delta: f64,
 
-    /// Minimum no of ocurrance of every state to finish simulation experiment
+    /// Minimum no of occurrence of every state to finish simulation experiment
     #[clap(short, default_value_t=100)]
     mim_state_cntr: u32,
 
     /// Number of series in simulation experiment
     #[clap(short, default_value_t=3)]
-    no_of_series: usize
+    no_of_series: usize,
+
+    /// Number of threads
+    #[clap(short, default_value_t=8)]
+    threads_no: usize
+}
+
+struct SimulationTask {
+    tr_class: Class,
+    v : u32
 }
 
 fn main() -> std::io::Result<()>
@@ -92,31 +103,89 @@ fn main() -> std::io::Result<()>
     let ss_e2_d2_col:Vec<f64> = flot::range(args.ss_e2_d2_min, args.ss_e2_d2_max + args.ss_e2_d2_delta, args.ss_e2_d2_delta).collect();
     let a_col: Vec<f64> = flot::range(args.a_min, args.a_max + args.a_delta, args.a_delta).collect();
 
+    let mut no_off_skipped_tasks = 0;
+
+    let mut tasks:LinkedList<SimulationTask> = LinkedList::new();
+
     for (cur_call_stream, cur_serv_stream, cs_e2_d2, ss_e2_d2, a) in
         cartesian!(call_streams.iter(), serv_streams.iter(), cs_e2_d2_col.iter(), ss_e2_d2_col.iter(), a_col.iter())
     {
         // Prepare Streams and write its params
-        let call_stream = StreamType::from_str(&cur_call_stream).expect("Failed");
-        let service_stream = StreamType::from_str(&cur_serv_stream).expect("Failed");
+        let call_stream = StreamType::from_str(&cur_call_stream.to_lowercase()).expect("Failed");
+        let service_stream = StreamType::from_str(&cur_serv_stream.to_lowercase()).expect("Failed");
 
-        if (matches!(call_stream, StreamType::Poisson) && !approx_eq!(f64, *cs_e2_d2, 1f64))
-        || (matches!(service_stream, StreamType::Poisson) && !approx_eq!(f64, *ss_e2_d2, 1f64)) {
-            continue;
+        if let Some(tr_class) = Class::try_new(
+            call_stream, service_stream,
+            *a, *cs_e2_d2, 1f64, *ss_e2_d2) {
+            tasks.push_back(SimulationTask { tr_class: tr_class, v: args.v });
+        } else {
+            no_off_skipped_tasks += 1;
+        }
+    }
+    println!("Number od tasks to do: {}, number of skipped tasks {}", tasks.len(), no_off_skipped_tasks);
+
+    let mut workers: LinkedList <JoinHandle<SimResult>> = LinkedList::new();
+    while !tasks.is_empty() {
+        let mut task_no = 0;
+        while task_no < args.threads_no && !tasks.is_empty() {
+            let cur_task = tasks.pop_front().unwrap();
+            workers.push_back(thread::spawn(move || {
+                let mut results = SimResult::new(cur_task.tr_class.clone());
+
+                println!("Simulation a={}, arrival stream {}:{}, service stream {}:{}", cur_task.tr_class.get_a(), cur_task.tr_class.get_str_new_desc(), cur_task.tr_class.get_new_e2d2(), cur_task.tr_class.get_str_end_desc(), cur_task.tr_class.get_end_e2d2());
+
+                for v in 1..cur_task.v + 1 {
+                    let start = Instant::now();
+                    let (avg, dev) = sim::simulation(v, cur_task.tr_class, args.mim_state_cntr, args.no_of_series);
+                    let duration = start.elapsed();
+                    let pefromance = (avg.no_of_events * args.no_of_series as f64) / duration.as_micros() as f64;
+                    println!("v={}: performance {:.3} events/µs, no of events : {} ", v, pefromance, avg.no_of_events.round().separated_string());
+                    results.add(v, avg, dev);
+                }
+                results
+            }));
         }
 
-        let tr_class = Class::new(call_stream, service_stream,
-                                  *a, *cs_e2_d2, 1f64, *ss_e2_d2);
+        while !workers.is_empty() {
+            let mut singleWorker = workers.pop_front().unwrap();
+            let result = singleWorker.join().unwrap();
+            result.write(&mut file);
+        }
+    }
 
+
+    /*
+
+        let sim_task = thread::spawn(move || {
+            let mut results = SimResult::new(cur_task.tr_class.clone());
+
+            println!("Simulation a={}, arrival stream {}:{}, service stream {}:{}", cur_task.tr_class.get_a(), cur_task.tr_class.get_str_new_desc(), cur_task.tr_class.get_new_e2d2(), cur_task.tr_class.get_str_end_desc(), cur_task.tr_class.get_end_e2d2());
+
+            for v in 1..cur_task.v + 1 {
+                print!("v={}", v);
+                let start = Instant::now();
+                let (avg, dev) = sim::simulation(v, cur_task.tr_class, args.mim_state_cntr, args.no_of_series);
+                let duration = start.elapsed();
+                let pefromance =  (avg.no_of_events * args.no_of_series as f64) / duration.as_micros() as f64;
+                println!(" performance {:.3} events/µs, no of events : {} ", pefromance, avg.no_of_events.round().separated_string());
+                results.add(v, avg, dev);
+            }
+            results
+        });
+        let result = sim_task.join().unwrap();
+        result.write(&mut file);
+    for cur_task in &tasks
+    {
         // Make simulation experiments and write it
-        let mut results = SimResult::new(&tr_class);
+        let mut results = SimResult::new(&cur_task.tr_class);
 
-        println!("Simulation a={}, arrival stream {}:{}, service stream {}:{}", *a, &cur_call_stream, *cs_e2_d2, &cur_serv_stream, *ss_e2_d2);
+        println!("Simulation a={}, arrival stream {}:{}, service stream {}:{}", cur_task.tr_class.get_a(), cur_task.tr_class.get_str_new_desc(), cur_task.tr_class.get_new_e2d2(), cur_task.tr_class.get_str_end_desc(), cur_task.tr_class.get_end_e2d2());
 
         //let mut results = BTreeMap::new();
-        for v in 1..args.v + 1 {
+        for v in 1..cur_task.v + 1 {
             print!("v={}", v);
             let start = Instant::now();
-            let (avg, dev) = sim::simulation(v, tr_class, args.mim_state_cntr, args.no_of_series);
+            let (avg, dev) = sim::simulation(v, cur_task.tr_class, args.mim_state_cntr, args.no_of_series);
             let duration = start.elapsed();
             let pefromance =  (avg.no_of_events * args.no_of_series as f64) / duration.as_micros() as f64;
             println!(" performance {:.3} events/µs, no of events : {} ", pefromance, avg.no_of_events.round().separated_string());
@@ -124,6 +193,7 @@ fn main() -> std::io::Result<()>
         }
         results.write(&mut file);
     }
+    */
 
     println!("Done");
     Ok(())

@@ -5,14 +5,14 @@ use std::io::prelude::*;
 use crate::sim::model::class::{Class};
 use crate::sim::simulator::statistics::Statistics;
 
-pub struct SimResult<'a>
+pub struct SimResult
 {
-    pub tr_class: &'a Class,
+    pub tr_class: Class,
     pub items: BTreeMap<u32, (Statistics, Statistics)>
 }
 
-impl <'a> SimResult<'a> {
-    pub fn new(tr_class :&'a Class) -> SimResult<'a> {
+impl SimResult {
+    pub fn new(tr_class :Class) -> SimResult {
         SimResult {
             tr_class: tr_class,
             items: BTreeMap::new()
@@ -75,7 +75,7 @@ impl <'a> SimResult<'a> {
 
     pub fn write(& self, output: &mut File)
     {
-        SimResult::write_sim_par(self.tr_class, output);
+        SimResult::write_sim_par(&self.tr_class, output);
         self.write_sim_prob(output);
         self.write_new_int(output);
         self.write_end_int(output);

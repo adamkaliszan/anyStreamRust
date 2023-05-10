@@ -6,6 +6,8 @@ use rand_distr::{Exp, Uniform, Gamma, Pareto};
 mod utils;
 
 use std::str::FromStr;
+use float_cmp::*;
+
 #[derive(Clone, Copy)]
 pub enum StreamType {
     Poisson,
@@ -57,6 +59,20 @@ impl Class{
             StreamType::Gamma   => "Gamma",
             StreamType::Pareto  => "Pareto"
         }
+    }
+
+    pub fn try_new(new_stream_type: StreamType, end_stream_type: StreamType,
+                   new_int: f64, new_e2_d2: f64,
+                   end_int: f64, end_e2_d2: f64 ) -> Option<Self> {
+        if matches!(new_stream_type, StreamType::Poisson) && !approx_eq!(f64, new_e2_d2, 1f64) {
+            return None;
+        }
+
+        if matches!(end_stream_type, StreamType::Poisson) && !approx_eq!(f64, end_e2_d2, 1f64) {
+            return None;
+        }
+
+        Some(Class::new(new_stream_type, end_stream_type, new_int, new_e2_d2, end_int, end_e2_d2))
     }
 
     pub fn new(new_stream_type: StreamType, end_stream_type: StreamType,
