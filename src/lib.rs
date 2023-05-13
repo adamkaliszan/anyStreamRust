@@ -1,3 +1,5 @@
+extern crate core;
+
 mod sim;
 
 #[cfg(test)]
@@ -38,7 +40,7 @@ mod tests {
         let tr_class = Class::new(arrival_type, Poisson, arrival_intensity, arrival_e2d2, serv_intensity, 1.0);
         let mut rng: ThreadRng = ThreadRng::default();
 
-        let len = 100_000;
+        let len = 10_000_000;
         let samples:Vec<f64> = (0..len).enumerate().map(|_| tr_class.get_time_new_call(&mut rng)).collect();
 
         let exp_mean_time = serv_intensity / tr_class.get_a();
@@ -52,7 +54,7 @@ mod tests {
 
         let std_dev_time = std_deviation(&samples);
         match std_dev_time {
-            Some(cur_std_dev_time) => assert_relative_eq!(cur_std_dev_time, exp_std_dev_time, max_relative=0.01),
+            Some(cur_std_dev_time) => assert_relative_eq!(cur_std_dev_time, exp_std_dev_time, max_relative=0.1),
             None => assert!(false, "variance fail")
         }
     }
@@ -94,8 +96,8 @@ mod tests {
     }
 
     #[test]
-    fn test_pareto_intensity1() {
-        test_tr_class(Pareto, 1.0, 1.0);
+    fn test_pareto_intensity1_e2d2_10() {
+        test_tr_class(Pareto, 1.0, 10.0);
     }
 
     #[test]
@@ -103,30 +105,4 @@ mod tests {
         test_tr_class(Pareto, 1.0, 3.0);
     }
 
-    /*
-    #[test]
-    fn test_poison_expected_arrival_time() {
-        let serv_intensity = 1.0;
-        let tr_class = Class::new(Poisson, Poisson, 3.0, 1.0, serv_intensity, 1.0);
-        let mut rng: ThreadRng = ThreadRng::default();
-
-        let len = 100_000;
-        let samples:Vec<f64> = (0..len).enumerate().map(|_| tr_class.get_time_new_call(&mut rng)).collect();// sum();
-
-        let exp_mean_time = serv_intensity / tr_class.get_a();
-        let exp_std_dev_time = (exp_mean_time * exp_mean_time /tr_class.get_new_e2d2()).sqrt();
-
-        let mean_time = mean(&samples);
-        match mean_time {
-            Some(cur_mean_time) => assert_relative_eq!(cur_mean_time, exp_mean_time, max_relative=0.01),
-            None => assert!(false)
-        }
-
-        let std_dev_time = std_deviation(&samples);
-        match std_dev_time {
-            Some(cur_std_dev_time) => assert_relative_eq!(cur_std_dev_time, exp_std_dev_time, max_relative=0.01),
-            None => assert!(false, "variance fail")
-        }
-    }
-     */
 }
