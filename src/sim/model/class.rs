@@ -6,7 +6,9 @@ use rand_distr::{Exp, Uniform, Gamma, Pareto};
 mod utils;
 
 use std::str::FromStr;
+use approx::relative_ne;
 use float_cmp::*;
+use crate::sim::model::class::StreamType::Poisson;
 
 #[derive(Clone, Copy)]
 pub enum StreamType {
@@ -61,65 +63,78 @@ impl Class{
         }
     }
 
-    pub fn try_new(new_stream_type: StreamType, end_stream_type: StreamType,
-                   new_int: f64, new_e2_d2: f64,
-                   end_int: f64, end_e2_d2: f64 ) -> Option<Self> {
-        if matches!(new_stream_type, StreamType::Poisson) && !approx_eq!(f64, new_e2_d2, 1f64) {
-            return None;
-        }
+    pub fn try_get_stream(strType: StreamType, mean: f64, variance: f64) -> Option<StreamOfEvents> {
+        let new_int = 1f64 / mean;
+        return match strType {
+            StreamType::Poisson => {
+                if relative_ne!(variance, 1f64/(new_int*new_int)) { return None; }
 
-        if matches!(end_stream_type, StreamType::Poisson) && !approx_eq!(f64, end_e2_d2, 1f64) {
-            return None;
+                let distrib = Exp::new(new_int);
+                match distrib {
+                    Ok(some_distrib) => Some(StreamOfEvents::Poisson(some_distrib)),
+                    Err(e) => {
+                        println!("{}: failed to create Poisson stream with λ = {}", e, new_int);
+                        None
+                    }
+                }
+            },
+            StreamType::Uniform => {
+                let (min, max) = utils::uniform_gen_min_max(new_int, variance);
+                if min < 0f64 {
+                    println!("Wrong parameters in Uniform distribution. Minimum value is < 0");
+                    None
+                }
+                else {
+                    Some(StreamOfEvents::Uniform(Uniform::new(min, max)))
+                }
+            },
+            StreamType::Gamma => {
+                let (scale, shape) = utils::gamma_get_scale_shape(new_int, variance);
+                match Gamma::new(scale, shape) {
+                    Ok(some_distrib) => Some(StreamOfEvents::Gamma(some_distrib)),
+                    Err(e) => {
+                        println!("{}: failed to create Gamma with Ex = {} and D = {}", e, mean, variance);
+                        None
+                    }
+                }
+            },
+            StreamType::Pareto => {
+                let (scale, shape) = utils::pareto_get_scale_shape(new_int, variance);
+                match Pareto::new(scale, shape) {
+                    Ok(some_distrib) => Some(StreamOfEvents::Pareto(some_distrib)),
+                    Err(e) => {
+                        println!("{}: failed to create Pareto with Ex = {} and D = {}", e, mean, variance);
+                        None
+                    }
+                }
+            }
         }
-
-        Some(Class::new(new_stream_type, end_stream_type, new_int, new_e2_d2, end_int, end_e2_d2))
     }
 
     pub fn new(new_stream_type: StreamType, end_stream_type: StreamType,
-               new_int: f64, new_e2_d2: f64,
-               end_int: f64, end_e2_d2: f64 ) -> Self {
+                   new_int: f64, new_e2_d2: f64,
+                   end_int: f64, end_e2_d2: f64 ) -> Option<Self> {
+        let (arrival_mean, arrival_variance) = utils::get_e_d(new_int, new_e2_d2);
+        let (service_mean, service_variance) = utils::get_e_d(end_int, end_e2_d2);
 
-        let result = Self {
-            arrival_stream       : match new_stream_type {
-                StreamType::Poisson =>
-                    StreamOfEvents::Poisson(Exp::new(new_int).unwrap()),
-                StreamType::Uniform => {
-                    let (min, max) = utils::uniform_gen_min_max(new_int, new_e2_d2);
-                    StreamOfEvents::Uniform(Uniform::new(min, max))
-                },
-                StreamType::Gamma => {
-                    let (scale, shape) = utils::gamma_get_scale_shape(new_int, new_e2_d2);
-                    StreamOfEvents::Gamma(Gamma::new(scale, shape).unwrap())
-                },
-                StreamType::Pareto => {
-                    let (scale, shape) = utils::pareto_get_scale_shape(new_int, new_e2_d2);
-                    StreamOfEvents::Pareto(Pareto::new(scale, shape).unwrap())
-                }
-            },
-            service_stream       : match end_stream_type {
-                StreamType::Poisson =>
-                    StreamOfEvents::Poisson(Exp::new(end_int).unwrap()),
-                StreamType::Uniform => {
-                    let (min, max) = utils::uniform_gen_min_max(end_int, end_e2_d2);
-                    StreamOfEvents::Uniform(Uniform::new(min, max))
-                },
-                StreamType::Gamma => {
-                    let (scale, shape) = utils::gamma_get_scale_shape(end_int, end_e2_d2);
-                    StreamOfEvents::Gamma(Gamma::new(scale, shape).unwrap())
-                },
-                StreamType::Pareto => {
-                    let (scale, shape) = utils::pareto_get_scale_shape(end_int, end_e2_d2);
-                    StreamOfEvents::Pareto(Pareto::new(scale, shape).unwrap())
-                }
-            },
-            a : new_int / end_int,
-            arrival_stream_type: new_stream_type,
-            arrival_e2d2       : new_e2_d2,
-            service_stream_type: end_stream_type,
-            service_e2d2       : end_e2_d2,
-        };
-        result
+        let arrival_str_opt = Self::try_get_stream(new_stream_type, arrival_mean, arrival_variance);
+        let service_str_opt = Self::try_get_stream(end_stream_type, service_mean, service_variance);
+
+        match (arrival_str_opt, service_str_opt) {
+            (Some(arrival_str), Some(service_str)) =>
+                Some (Class {
+                    arrival_stream: arrival_str,
+                    service_stream: service_str,
+                    a: new_int / end_int,
+                    arrival_stream_type: new_stream_type,
+                    arrival_e2d2: new_e2_d2,
+                    service_stream_type: end_stream_type,
+                    service_e2d2: end_e2_d2
+                }),
+            _ => None
+        }
     }
+
     pub fn get_a(&self) -> f64 {
         self.a
     }
@@ -170,9 +185,7 @@ impl Class{
 }
 
 impl FromStr for StreamType {
-
     type Err = ();
-
     fn from_str(input: &str) -> Result<StreamType, Self::Err> {
         match input {
             "poisson" => Ok(StreamType::Poisson),

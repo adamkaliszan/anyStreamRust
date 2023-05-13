@@ -37,7 +37,7 @@ mod tests {
 
     fn test_tr_class(arrival_type: StreamType, arrival_intensity: f64, arrival_e2d2: f64) {
         let serv_intensity = 1.0;
-        let tr_class = Class::new(arrival_type, Poisson, arrival_intensity, arrival_e2d2, serv_intensity, 1.0);
+        let tr_class = Class::new(arrival_type, Poisson, arrival_intensity, arrival_e2d2, serv_intensity, 1.0).unwrap();
         let mut rng: ThreadRng = ThreadRng::default();
 
         let len = 10_000_000;
@@ -86,6 +86,7 @@ mod tests {
     }
 
     #[test]
+    #[should_panic]
     fn test_uniform_intensity1() {
         test_tr_class(Uniform, 1.0, 1.0);
     }
@@ -93,6 +94,11 @@ mod tests {
     #[test]
     fn test_uniform_intensity1_e2d2_3() {
         test_tr_class(Uniform, 1.0, 3.0);
+    }
+
+    #[test]
+    fn test_uniform_intensity1_e2d2_5() {
+        test_tr_class(Uniform, 1.0, 5.0);
     }
 
     #[test]

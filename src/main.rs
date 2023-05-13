@@ -114,7 +114,7 @@ fn main() -> std::io::Result<()>
         let call_stream = StreamType::from_str(&cur_call_stream.to_lowercase()).expect("Failed");
         let service_stream = StreamType::from_str(&cur_serv_stream.to_lowercase()).expect("Failed");
 
-        if let Some(tr_class) = Class::try_new(
+        if let Some(tr_class) = Class::new(
             call_stream, service_stream,
             *a, *cs_e2_d2, 1f64, *ss_e2_d2) {
             tasks.push_back(SimulationTask { tr_class: tr_class, v: args.v });
