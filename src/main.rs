@@ -5,7 +5,7 @@ use std::collections::LinkedList;
 use std::fs::File;
 use std::str::FromStr;
 use std::thread;
-use std::thread::{JoinHandle, Thread};
+use std::thread::{JoinHandle};
 use std::time::Instant;
 
 use clap::Parser;
@@ -144,11 +144,12 @@ fn main() -> std::io::Result<()>
                 }
                 results
             }));
+            task_no += 1;
         }
 
         while !workers.is_empty() {
-            let mut singleWorker = workers.pop_front().unwrap();
-            let result = singleWorker.join().unwrap();
+            let single_worker = workers.pop_front().unwrap();
+            let result = single_worker.join().unwrap();
             result.write(&mut file);
         }
     }
