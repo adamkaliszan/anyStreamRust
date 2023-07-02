@@ -1,3 +1,8 @@
+use serde::{Deserialize, Serialize};
+use std::cmp::Ord;
+use std::cmp::Ordering;
+
+
 #[derive(Clone)]
 pub enum EventType
 {
@@ -6,13 +11,21 @@ pub enum EventType
     LostCall
 }
 
-#[derive(Clone)]
+/// Single simulation statistics, before processing.
+/// New events can be added in order to increase single simulations'
+/// experiment accuracy if only add events before ware accounted to
+/// the statistics.
+#[derive(Serialize, Deserialize, Clone)]
 pub struct StatisticsRaw
 {
     pub states: Vec<MacrostateRaw>,
     pub time_total: f64
 }
 
+/// Processed Statistics
+/// Base on many simulation series
+/// Holds average value or standard deviation
+#[derive(Serialize, Deserialize)]
 pub struct Statistics
 {
     pub v: usize,
@@ -20,7 +33,7 @@ pub struct Statistics
     pub no_of_events: f64
 }
 
-#[derive(Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct MacrostateRaw
 {
     pub duration: f64,
@@ -28,7 +41,7 @@ pub struct MacrostateRaw
     pub no_out_end: u32,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct Macrostate
 {
     pub p: f64,

@@ -1,25 +1,28 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, LinkedList};
 use std::fs::File;
 use std::io::prelude::*;
+use serde::{Deserialize, Serialize};
+use mongodb::{bson::doc, results, error};
 
 use crate::sim::model::class::{Class};
 use crate::sim::simulator::statistics::Statistics;
 
+#[derive(Serialize, Deserialize)]
 pub struct SimResult
 {
     pub tr_class: Class,
-    pub items: BTreeMap<u32, (Statistics, Statistics)>
+    pub systems: LinkedList<(Statistics, Statistics)>
 }
 
 impl SimResult {
     pub fn new(tr_class :Class) -> SimResult {
         SimResult {
             tr_class: tr_class,
-            items: BTreeMap::new()
+            systems: LinkedList::new()
         }
     }
     pub fn add(&mut self, v: u32, avg : Statistics, dev: Statistics) {
-        self.items.insert(v, (avg, dev));
+        self.systems.push_back((avg, dev));
     }
 
     pub fn write_header(v_max :u32, output: &mut File)
@@ -73,6 +76,12 @@ impl SimResult {
             expect("Write header filed");
     }
 
+    pub fn write_mongo(& self, db: &mut mongodb::sync::Database) -> Result<mongodb::results::InsertOneResult, mongodb::error::Error>
+    {
+        let collection = db.collection::<Self>("results");
+        collection.insert_one(self, None)
+    }
+
     pub fn write(& self, output: &mut File)
     {
         SimResult::write_sim_par(&self.tr_class, output);
@@ -86,11 +95,12 @@ impl SimResult {
     }
 
     fn write_sim_prob(& self, output: &mut File) {
-        let v_max = self.items.iter().map(|x|x.0).max().unwrap();
+        let v_max = self.systems.iter().map(|x|x.0.v).max().unwrap();
         for v in 1..v_max+1 {
-            match self.items.get_key_value(&v) {
+            let item = self.systems.iter().find(|&x| x.0.v == v);
+            match item {
                 Option::Some(itm) => {
-                    let val_avg = &itm.1.0;
+                    let val_avg = &itm.0;
 
                     for x in 0..val_avg.v+1 {
                         output.write_fmt(format_args!("\t{}", val_avg.states[x].p)).
@@ -108,11 +118,12 @@ impl SimResult {
     }
 
     fn write_sim_prob_dev(& self, output: &mut File) {
-        let v_max = self.items.iter().map(|x|x.0).max().unwrap();
+        let v_max = self.systems.iter().map(|x|x.1.v).max().unwrap();
         for v in 1..v_max+1 {
-            match self.items.get_key_value(&v) {
+            let item = self.systems.iter().find(|&x| x.1.v == v);
+            match item {
                 Option::Some(itm) => {
-                    let val_avg = &itm.1.1;
+                    let val_avg = &itm.1;
 
                     for x in 0..val_avg.v+1 {
                         output.write_fmt(format_args!("\t{}", val_avg.states[x].p)).
@@ -130,11 +141,12 @@ impl SimResult {
     }
 
     fn write_new_int(& self, output: &mut File) {
-        let v_max = self.items.iter().map(|x|x.0).max().unwrap();
+        let v_max = self.systems.iter().map(|x|x.0.v).max().unwrap();
         for v in 1..v_max+1 {
-            match self.items.get_key_value(&v) {
+            let item = self.systems.iter().find(|&x| x.0.v == v);
+            match item {
                 Option::Some(itm) => {
-                    let val = &itm.1.0;
+                    let val = &itm.0;
 
                     for x in 0..val.v+1 {
                         output.write_fmt(format_args!("\t{}", val.states[x].out_new)).
@@ -152,11 +164,12 @@ impl SimResult {
     }
 
     fn write_new_int_dev(& self, output: &mut File) {
-        let v_max = self.items.iter().map(|x|x.0).max().unwrap();
+        let v_max = self.systems.iter().map(|x|x.1.v).max().unwrap();
         for v in 1..v_max+1 {
-            match self.items.get_key_value(&v) {
+            let item = self.systems.iter().find(|&x| x.1.v == v);
+            match item {
                 Option::Some(itm) => {
-                    let val = &itm.1.1;
+                    let val = &itm.1;
 
                     for x in 0..val.v+1 {
                         output.write_fmt(format_args!("\t{}", val.states[x].out_new)).
@@ -174,11 +187,12 @@ impl SimResult {
     }
 
     fn write_end_int(& self, output: &mut File) {
-        let v_max = self.items.iter().map(|x|x.0).max().unwrap();
+        let v_max = self.systems.iter().map(|x|x.0.v).max().unwrap();
         for v in 1..v_max+1 {
-            match self.items.get_key_value(&v) {
+            let item = self.systems.iter().find(|&x| x.0.v == v);
+            match item {
                 Option::Some(itm) => {
-                    let val = &itm.1.0;
+                    let val = &itm.0;
 
                     for x in 0..val.v+1 {
                         output.write_fmt(format_args!("\t{}", val.states[x].out_end)).
@@ -196,11 +210,12 @@ impl SimResult {
     }
 
     fn write_end_int_dev(& self, output: &mut File) {
-        let v_max = self.items.iter().map(|x|x.0).max().unwrap();
+        let v_max = self.systems.iter().map(|x|x.1.v).max().unwrap();
         for v in 1..v_max+1 {
-            match self.items.get_key_value(&v) {
+            let item = self.systems.iter().find(|&x| x.1.v == v);
+            match item {
                 Option::Some(itm) => {
-                    let val = &itm.1.1;
+                    let val = &itm.1;
 
                     for x in 0..val.v+1 {
                         output.write_fmt(format_args!("\t{}", val.states[x].out_end)).

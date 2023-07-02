@@ -15,6 +15,9 @@ use crate::sim::simulator::sim_result::SimResult;
 use cartesian::*;
 use separator::Separatable;
 mod sim;
+use mongodb::{bson::doc, options::{ClientOptions, ServerApi, ServerApiVersion}, sync::Client};
+use serde::{Serialize, Deserialize};
+use serde_json::{Result, Value};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
@@ -82,7 +85,15 @@ struct Cli {
 
     /// Number of threads
     #[clap(short, default_value_t=8)]
-    threads_no: usize
+    threads_no: usize,
+
+    /// Mongo URI
+    #[clap(long, default_value="mongodb://192.168.1.39")]
+    mongo_uri: String,
+
+    /// Mongo database name
+    #[clap(long, default_value="anystream")]
+    mongo_database: String
 }
 
 struct SimulationTask {
@@ -90,9 +101,53 @@ struct SimulationTask {
     v : u32
 }
 
+fn mongo_open_database(mongo_uri: &String, mongo_db: &String) -> Option<mongodb::sync::Database> {
+    let mut client_options = match ClientOptions::parse(mongo_uri) {
+        Ok(co) => co,
+        Err(e) => {
+            println!("Failed to parse mongo URI \"{mongo_uri}\". Mongo DB is disabled: {e}");
+            return None;
+        }
+    };
+
+    // Set the server_api field of the client_options object to Stable API version 1
+    let server_api = ServerApi::builder().version(ServerApiVersion::V1).build();
+    client_options.server_api = Some(server_api);
+    // Create a new client and connect to the server
+    let client = match Client::with_options(client_options) {
+        Ok(cl) => cl,
+        Err(e) => {
+            println!("Failed to create mongo client: {e}. Mongo DB is disabled");
+            return None;
+        }
+    };
+
+    // Send a ping to confirm a successful connection
+    let db = client.database(mongo_db);
+
+    match db.run_command(doc! {"ping": 1}, None) {
+        Ok(_) => {
+            println!("Pinged your deployment. You successfully connected to MongoDB!");
+            println!("All OK");
+            Some(db)
+        }
+        Err(e) => {
+            println!("Failed to ping DB {e}");
+            None
+        }
+    }
+}
+
 fn main() -> std::io::Result<()>
 {
     let args = Cli::parse();
+
+    let mut db: Option<mongodb::sync::Database> = mongo_open_database(&args.mongo_uri, &args.mongo_database);
+
+    match &db {
+        Some(_db) => println!("Using mongo db"),
+        None => println!("Mongo DB is not available")
+    };
 
     let mut file = File::create(args.output_path)?;
     SimResult::write_header(args.v, &mut file);
@@ -151,6 +206,14 @@ fn main() -> std::io::Result<()>
             let single_worker = workers.pop_front().unwrap();
             let result = single_worker.join().unwrap();
             result.write(&mut file);
+
+            if let Some(db_val) = &mut db {
+                let str = serde_json::to_string(&result).unwrap();
+                println!("Serialized: {str}");
+                if let Err(err) = result.write_mongo(db_val) {
+                    println!("Failed to save results: {err}");
+                }
+            }
         }
     }
 
