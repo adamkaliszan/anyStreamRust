@@ -8,10 +8,17 @@ use crate::sim::model::class::{Class};
 use crate::sim::simulator::statistics::Statistics;
 
 #[derive(Serialize, Deserialize)]
+pub struct SimResultSingleV {
+    v: u32,
+    avg: Statistics,
+    dev: Statistics
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct SimResult
 {
     pub tr_class: Class,
-    pub systems: LinkedList<(Statistics, Statistics)>
+    pub systems: LinkedList<SimResultSingleV>
 }
 
 impl SimResult {
@@ -22,7 +29,7 @@ impl SimResult {
         }
     }
     pub fn add(&mut self, v: u32, avg : Statistics, dev: Statistics) {
-        self.systems.push_back((avg, dev));
+        self.systems.push_back(SimResultSingleV{v: v, avg: avg, dev: dev});
     }
 
     pub fn write_header(v_max :u32, output: &mut File)
@@ -95,12 +102,12 @@ impl SimResult {
     }
 
     fn write_sim_prob(& self, output: &mut File) {
-        let v_max = self.systems.iter().map(|x|x.0.v).max().unwrap();
+        let v_max = self.systems.iter().map(|x|x.v).max().unwrap();
         for v in 1..v_max+1 {
-            let item = self.systems.iter().find(|&x| x.0.v == v);
+            let item = self.systems.iter().find(|&x| x.v == v);
             match item {
                 Option::Some(itm) => {
-                    let val_avg = &itm.0;
+                    let val_avg = &itm.avg;
 
                     for x in 0..val_avg.v+1 {
                         output.write_fmt(format_args!("\t{}", val_avg.states[x].p)).
@@ -118,15 +125,15 @@ impl SimResult {
     }
 
     fn write_sim_prob_dev(& self, output: &mut File) {
-        let v_max = self.systems.iter().map(|x|x.1.v).max().unwrap();
+        let v_max = self.systems.iter().map(|x|x.v).max().unwrap();
         for v in 1..v_max+1 {
-            let item = self.systems.iter().find(|&x| x.1.v == v);
+            let item = self.systems.iter().find(|&x| x.v == v);
             match item {
                 Option::Some(itm) => {
-                    let val_avg = &itm.1;
+                    let val_dev = &itm.dev;
 
-                    for x in 0..val_avg.v+1 {
-                        output.write_fmt(format_args!("\t{}", val_avg.states[x].p)).
+                    for x in 0..val_dev.v+1 {
+                        output.write_fmt(format_args!("\t{}", val_dev.states[x].p)).
                             expect("write_sim_prob_dev failed");
                     }
                 }
@@ -141,12 +148,12 @@ impl SimResult {
     }
 
     fn write_new_int(& self, output: &mut File) {
-        let v_max = self.systems.iter().map(|x|x.0.v).max().unwrap();
+        let v_max = self.systems.iter().map(|x|x.v).max().unwrap();
         for v in 1..v_max+1 {
-            let item = self.systems.iter().find(|&x| x.0.v == v);
+            let item = self.systems.iter().find(|&x| x.v == v);
             match item {
                 Option::Some(itm) => {
-                    let val = &itm.0;
+                    let val = &itm.avg;
 
                     for x in 0..val.v+1 {
                         output.write_fmt(format_args!("\t{}", val.states[x].out_new)).
@@ -164,12 +171,12 @@ impl SimResult {
     }
 
     fn write_new_int_dev(& self, output: &mut File) {
-        let v_max = self.systems.iter().map(|x|x.1.v).max().unwrap();
+        let v_max = self.systems.iter().map(|x|x.v).max().unwrap();
         for v in 1..v_max+1 {
-            let item = self.systems.iter().find(|&x| x.1.v == v);
+            let item = self.systems.iter().find(|&x| x.v == v);
             match item {
                 Option::Some(itm) => {
-                    let val = &itm.1;
+                    let val = &itm.dev;
 
                     for x in 0..val.v+1 {
                         output.write_fmt(format_args!("\t{}", val.states[x].out_new)).
@@ -187,12 +194,12 @@ impl SimResult {
     }
 
     fn write_end_int(& self, output: &mut File) {
-        let v_max = self.systems.iter().map(|x|x.0.v).max().unwrap();
+        let v_max = self.systems.iter().map(|x|x.v).max().unwrap();
         for v in 1..v_max+1 {
-            let item = self.systems.iter().find(|&x| x.0.v == v);
+            let item = self.systems.iter().find(|&x| x.v == v);
             match item {
                 Option::Some(itm) => {
-                    let val = &itm.0;
+                    let val = &itm.avg;
 
                     for x in 0..val.v+1 {
                         output.write_fmt(format_args!("\t{}", val.states[x].out_end)).
@@ -210,12 +217,12 @@ impl SimResult {
     }
 
     fn write_end_int_dev(& self, output: &mut File) {
-        let v_max = self.systems.iter().map(|x|x.1.v).max().unwrap();
+        let v_max = self.systems.iter().map(|x|x.v).max().unwrap();
         for v in 1..v_max+1 {
-            let item = self.systems.iter().find(|&x| x.1.v == v);
+            let item = self.systems.iter().find(|&x| x.v == v);
             match item {
                 Option::Some(itm) => {
-                    let val = &itm.1;
+                    let val = &itm.dev;
 
                     for x in 0..val.v+1 {
                         output.write_fmt(format_args!("\t{}", val.states[x].out_end)).
