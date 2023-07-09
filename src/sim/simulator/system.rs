@@ -1,11 +1,15 @@
-use crate::sim::simulator::statistics::*;
+use mongodb::bson::Uuid;
+
+use crate::sim::simulator::single_statistics::*;
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Clone)]
 pub struct Group
 {
-    v: usize,
+    pub v: usize,
     v_free: usize,
-    statistics: Option<StatisticsRaw>
+    statistics: Option<StatisticsRunExperiment>
 }
 
 impl Group {
@@ -56,27 +60,32 @@ impl Group {
 
     pub fn statistics_init(&mut self) {
         match &mut self.statistics {
-            None => self.statistics = Option::Some(StatisticsRaw::new(self.v)),
+            None => self.statistics = Option::Some(StatisticsRunExperiment::new(self.v)),
             Some(stat) => stat.clear()
         }
     }
 
-    pub fn statistics_preview(&self, no_of_events:f64) -> Statistics {
+    pub fn statistics_preview(&self, no_of_events:u64, min_no_of_events_per_state: u32) -> StatisticsFinalized {
         if let Some(stat) = &self.statistics {
             let total_time = stat.time_total;
 
-            return Statistics {
-                v: self.v as usize,
+            return StatisticsFinalized {
                 states : stat.states.iter().map(
                     |x| x.get_macrostate_statistics(total_time)
                 ).collect(),
-                no_of_events
+                v: self.v,
+                no_of_events: no_of_events,
+                metadata : StatisticsFinalizedMetadata {
+                    min_no_of_events_per_state: min_no_of_events_per_state,
+                    uuid: Uuid::new(),
+                    version: VERSION.to_string()
+                }
             };
         }
         panic!("No raw statistics");
     }
 
-    pub fn min_state_occurance(&self) -> u32 {
+    pub fn min_state_occurance(&self) -> usize {
         match &self.statistics {
             Some(a) => {
                 match &a.states.iter().min_by(

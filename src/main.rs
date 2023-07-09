@@ -1,23 +1,30 @@
 extern crate separator;
 extern crate flot;
 
-use std::collections::LinkedList;
+use btreemultimap::BTreeMultiMap;
+use cartesian::*;
+use clap::Parser;
+use mongodb::{bson::doc, options::{ClientOptions, ServerApi, ServerApiVersion}, sync::Client};
+use semver::Op::Less;
+use semver::{BuildMetadata, Prerelease, Version, VersionReq};
+use separator::Separatable;
+use serde_json::{Result, Value};
+use std::collections::{BTreeMap, LinkedList};
+use std::env::args;
 use std::fs::File;
 use std::str::FromStr;
 use std::thread;
 use std::thread::{JoinHandle};
 use std::time::Instant;
 
-use clap::Parser;
-use crate::sim::model::class::{Class, StreamType};
-use crate::sim::simulator::sim_result::SimResult;
+use crate::sim::model::class::{Class, StreamType, sim_class::SimClass};
+use crate::sim::model::system::ModelDescription;
+use crate::sim::simulator::simulations_statistics::{SimStatisticsMultiV, StatisticsMultiSimulations};
+use crate::sim::simulator::single_statistics::{Macrostate, StatisticsFinalized, StatisticsRunExperiment};
 
-use cartesian::*;
-use separator::Separatable;
 mod sim;
-use mongodb::{bson::doc, options::{ClientOptions, ServerApi, ServerApiVersion}, sync::Client};
-use serde::{Serialize, Deserialize};
-use serde_json::{Result, Value};
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
@@ -97,8 +104,11 @@ struct Cli {
 }
 
 struct SimulationTask {
-    tr_class: Class,
-    v : u32
+    tr_class: SimClass,
+    v : usize,
+    mim_state_cntr: u32,
+    version: Vec<u32>,
+    sim_no: u32
 }
 
 fn mongo_open_database(mongo_uri: &String, mongo_db: &String) -> Option<mongodb::sync::Database> {
@@ -137,6 +147,16 @@ fn mongo_open_database(mongo_uri: &String, mongo_db: &String) -> Option<mongodb:
         }
     }
 }
+fn read_finilized_statistics(model: &ModelDescription, db: &mongodb::sync::Database, min_no_of_events_per_state: u32) -> LinkedList<StatisticsFinalized> {
+    let stats = StatisticsFinalized::read_mongo(model, db);
+    stats.into_iter()
+        .filter(|itm| if let Ok(_ver) = Version::parse(itm.metadata.version.as_str()) {
+            let req = VersionReq::parse(">=0.3.0").unwrap();
+            req.matches(&_ver)
+        } else {false })
+        .filter(|itm| itm.metadata.min_no_of_events_per_state >= min_no_of_events_per_state)
+        .collect()
+}
 
 fn main() -> std::io::Result<()>
 {
@@ -144,13 +164,8 @@ fn main() -> std::io::Result<()>
 
     let mut db: Option<mongodb::sync::Database> = mongo_open_database(&args.mongo_uri, &args.mongo_database);
 
-    match &db {
-        Some(_db) => println!("Using mongo db"),
-        None => println!("Mongo DB is not available")
-    };
-
     let mut file = File::create(args.output_path)?;
-    SimResult::write_header(args.v, &mut file);
+    SimStatisticsMultiV::write_header(args.v, &mut file);
 
     let call_streams = args.call_stream.clone();
     let serv_streams = args.serv_stream.clone();
@@ -158,9 +173,13 @@ fn main() -> std::io::Result<()>
     let ss_e2_d2_col:Vec<f64> = flot::range(args.ss_e2_d2_min, args.ss_e2_d2_max + args.ss_e2_d2_delta, args.ss_e2_d2_delta).collect();
     let a_col: Vec<f64> = flot::range(args.a_min, args.a_max + args.a_delta, args.a_delta).collect();
 
-    let mut no_off_skipped_tasks = 0;
+    let mut no_off_skipped_classes = 0;
+    let mut no_off_stored_tasks_before = 0;
+    let mut no_off_total_tasks_before = 0;
+
 
     let mut tasks:LinkedList<SimulationTask> = LinkedList::new();
+    let mut results: BTreeMultiMap<ModelDescription, StatisticsFinalized> = BTreeMultiMap::new();
 
     for (cur_call_stream, cur_serv_stream, cs_e2_d2, ss_e2_d2, a) in
         cartesian!(call_streams.iter(), serv_streams.iter(), cs_e2_d2_col.iter(), ss_e2_d2_col.iter(), a_col.iter())
@@ -169,95 +188,102 @@ fn main() -> std::io::Result<()>
         let call_stream = StreamType::from_str(&cur_call_stream.to_lowercase()).expect("Failed");
         let service_stream = StreamType::from_str(&cur_serv_stream.to_lowercase()).expect("Failed");
 
-        if let Some(tr_class) = Class::new(
+        if let Some(tr_class) = SimClass::new(
             call_stream, service_stream,
             *a, *cs_e2_d2, 1f64, *ss_e2_d2) {
-            tasks.push_back(SimulationTask { tr_class: tr_class, v: args.v });
+
+            for v in 1..args.v + 1 {
+                let model = ModelDescription{v:v as usize, class:tr_class.tr_class.clone()};
+                let mut sim_experiments = match &mut db {
+                    Some(_db) => {
+                        println!("Using mongo database");
+                        read_finilized_statistics(&model, &_db, args.mim_state_cntr)
+                    },
+                    None => LinkedList::new()
+                };
+
+                let no_of_ready_statistics= sim_experiments.len();
+
+                for sim_result in sim_experiments {
+                    results.insert(ModelDescription{class: tr_class.tr_class, v: v as usize}, sim_result);
+                }
+
+                no_off_stored_tasks_before += no_of_ready_statistics;
+                no_off_total_tasks_before += args.no_of_series;
+
+                for sim_no in no_of_ready_statistics..args.no_of_series {
+                    tasks.push_back(SimulationTask {
+                        tr_class: tr_class,
+                        v: v as usize,
+                        mim_state_cntr: args.mim_state_cntr,
+                        version: vec!(0, 0, 0),
+                        sim_no: (sim_no - no_of_ready_statistics) as u32
+                    });
+                }
+            }
         } else {
-            no_off_skipped_tasks += 1;
+            no_off_skipped_classes += 1;
         }
     }
-    println!("Number od tasks to do: {}, number of skipped tasks {}", tasks.len(), no_off_skipped_tasks);
+    println!("Number od tasks to do: {}, number of stored (skipped) tasks {}", tasks.len(), no_off_stored_tasks_before);
 
-    let mut workers: LinkedList <JoinHandle<SimResult>> = LinkedList::new();
+    let mut workers: LinkedList <JoinHandle<(ModelDescription, StatisticsFinalized)>> = LinkedList::new();
     while !tasks.is_empty() {
         let mut task_no = 0;
         while task_no < args.threads_no && !tasks.is_empty() {
             let cur_task = tasks.pop_front().unwrap();
             workers.push_back(thread::spawn(move || {
-                let mut results = SimResult::new(cur_task.tr_class.clone());
-
                 println!("Simulation a={}, arrival stream {}:{}, service stream {}:{}", cur_task.tr_class.get_a(), cur_task.tr_class.get_str_new_desc(), cur_task.tr_class.get_new_e2d2(), cur_task.tr_class.get_str_end_desc(), cur_task.tr_class.get_end_e2d2());
-
-                for v in 1..cur_task.v + 1 {
-                    let start = Instant::now();
-                    let (avg, dev) = sim::simulation(v, cur_task.tr_class, args.mim_state_cntr, args.no_of_series);
-                    let duration = start.elapsed();
-                    let pefromance = (avg.no_of_events * args.no_of_series as f64) / duration.as_micros() as f64;
-                    println!("v={}: performance {:.3} events/µs, no of events : {} ", v, pefromance, avg.no_of_events.round().separated_string());
-                    results.add(v, avg, dev);
-                }
-                results
+                let start = Instant::now();
+                let result = sim::simulation(cur_task.v, cur_task.tr_class, args.mim_state_cntr);
+                let duration = start.elapsed();
+                let pefromance = (result.no_of_events as f64) / duration.as_micros() as f64;
+                println!("v={}: performance {:.3} events/µs, no of events : {} ", cur_task.v, pefromance, result.no_of_events);
+                (ModelDescription{class:cur_task.tr_class.tr_class, v: cur_task.v }, result)
             }));
             task_no += 1;
         }
 
         while !workers.is_empty() {
             let single_worker = workers.pop_front().unwrap();
-            let result = single_worker.join().unwrap();
-            result.write(&mut file);
+            let (key, value) = single_worker.join().unwrap();
 
             if let Some(db_val) = &mut db {
-                let str = serde_json::to_string(&result).unwrap();
+                let str = serde_json::to_string(&value).unwrap();
                 println!("Serialized: {str}");
-                if let Err(err) = result.write_mongo(db_val) {
+                if let Err(err) = value.write_mongo(&key, db_val) {
                     println!("Failed to save results: {err}");
                 }
             }
+            //result.write(&mut file);
+            results.insert(key, value);
         }
     }
 
+    SimStatisticsMultiV::write_header(args.v, &mut file);
 
-    /*
+    let mut final_results: BTreeMap<Class, SimStatisticsMultiV> = BTreeMap::new();
 
-        let sim_task = thread::spawn(move || {
-            let mut results = SimResult::new(cur_task.tr_class.clone());
-
-            println!("Simulation a={}, arrival stream {}:{}, service stream {}:{}", cur_task.tr_class.get_a(), cur_task.tr_class.get_str_new_desc(), cur_task.tr_class.get_new_e2d2(), cur_task.tr_class.get_str_end_desc(), cur_task.tr_class.get_end_e2d2());
-
-            for v in 1..cur_task.v + 1 {
-                print!("v={}", v);
-                let start = Instant::now();
-                let (avg, dev) = sim::simulation(v, cur_task.tr_class, args.mim_state_cntr, args.no_of_series);
-                let duration = start.elapsed();
-                let pefromance =  (avg.no_of_events * args.no_of_series as f64) / duration.as_micros() as f64;
-                println!(" performance {:.3} events/µs, no of events : {} ", pefromance, avg.no_of_events.round().separated_string());
-                results.add(v, avg, dev);
+    for (key, values) in results {
+        let mut map_item = final_results.get_mut(&key.class);
+        match  map_item {
+            Some(itm) => {
+                let stat_signel_v = StatisticsMultiSimulations::statistics_proc(&values.into_iter().collect(), key.v);
+                itm.results.push_back(stat_signel_v);
+            },
+            None => {
+                let mut aggregatetResult:SimStatisticsMultiV = SimStatisticsMultiV::new(key.class);
+                let stat_signel_v = StatisticsMultiSimulations::statistics_proc(&values.into_iter().collect(), key.v);
+                aggregatetResult.results.push_back(stat_signel_v);
+                final_results.insert(key.class, aggregatetResult);
             }
-            results
-        });
-        let result = sim_task.join().unwrap();
-        result.write(&mut file);
-    for cur_task in &tasks
-    {
-        // Make simulation experiments and write it
-        let mut results = SimResult::new(&cur_task.tr_class);
-
-        println!("Simulation a={}, arrival stream {}:{}, service stream {}:{}", cur_task.tr_class.get_a(), cur_task.tr_class.get_str_new_desc(), cur_task.tr_class.get_new_e2d2(), cur_task.tr_class.get_str_end_desc(), cur_task.tr_class.get_end_e2d2());
-
-        //let mut results = BTreeMap::new();
-        for v in 1..cur_task.v + 1 {
-            print!("v={}", v);
-            let start = Instant::now();
-            let (avg, dev) = sim::simulation(v, cur_task.tr_class, args.mim_state_cntr, args.no_of_series);
-            let duration = start.elapsed();
-            let pefromance =  (avg.no_of_events * args.no_of_series as f64) / duration.as_micros() as f64;
-            println!(" performance {:.3} events/µs, no of events : {} ", pefromance, avg.no_of_events.round().separated_string());
-            results.add(v, avg, dev);
         }
-        results.write(&mut file);
     }
-    */
+
+    for (key, value) in final_results {
+        println!("Writing to file statistics for {:?}", key);
+        value.write(&mut file);
+    }
 
     println!("Done");
     Ok(())

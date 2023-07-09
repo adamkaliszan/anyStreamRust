@@ -1,14 +1,14 @@
 pub mod scheduler;
 pub mod process;
 pub mod system;
-pub mod statistics;
-pub mod sim_result;
+pub mod single_statistics;
+pub mod simulations_statistics;
 
 use system::Group;
 use rand::rngs::ThreadRng;
 use scheduler::Scheduler;
-use crate::sim::model::class::Class;
-use crate::sim::simulator::statistics::Statistics;
+use crate::sim::model::class::sim_class::SimClass;
+use crate::sim::simulator::single_statistics::StatisticsFinalized;
 
 #[derive(Clone)]
 pub struct Simulator<'a> {
@@ -16,7 +16,7 @@ pub struct Simulator<'a> {
     pub scheduler: Scheduler<'a>,
     pub rng: ThreadRng,
     pub no_of_lost_calls: u32,
-    pub tr_class: &'a Class,
+    pub tr_class: &'a SimClass,
     pub total_lost: u64,
     pub total_serv: u64,
 
@@ -27,7 +27,7 @@ pub struct Simulator<'a> {
 
 impl <'a>Simulator<'a>
 {
-    pub fn new(tr_class:&'a Class, v:usize) -> Simulator<'a> {
+    pub fn new(tr_class:&'a SimClass, v:usize) -> Simulator<'a> {
         Simulator {
             group: Group::new(v),
             scheduler: Scheduler::new(),
@@ -46,7 +46,7 @@ impl <'a>Simulator<'a>
         let first_process = process::SimProcess::new(& self.tr_class);
         self.scheduler.add_process(first_process);
 
-        let mut no_of_proc_call =10_000;
+        let mut no_of_proc_call =10_000 * self.group.v;
 
         while no_of_proc_call > 0 {
             let evnt = self.scheduler.get_process();
@@ -73,8 +73,8 @@ impl <'a>Simulator<'a>
             }
         }
     }
-    pub fn prepare_statistics(&self) -> Statistics {
-        self.group.statistics_preview((self.total_lost + self.total_serv) as f64)
+    pub fn prepare_statistics(&self) -> StatisticsFinalized {
+        self.group.statistics_preview(self.total_lost + self.total_serv, self.group.min_state_occurance() as u32)
     }
 
     pub fn end_simulation(&mut self) -> bool {
@@ -86,7 +86,7 @@ impl <'a>Simulator<'a>
             {
                 let min_ocur;
                 self.check_cntr = 100;
-                min_ocur = self.group.min_state_occurance();
+                min_ocur = self.group.min_state_occurance() as u32;
                 result = min_ocur >= self.min_occurrance;
             }
         }

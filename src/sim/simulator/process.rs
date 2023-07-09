@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use crate::sim::simulator::Simulator;
-use crate::sim::model::class::Class;
+use crate::sim::model::class::sim_class::SimClass;
 
 //use self::Ordering::*;
 //use std::collections::BinaryHeap;
@@ -23,7 +23,7 @@ pub struct SimProcess<'a>//: Ord
 {
     pub state: State,
     pub time: f64,
-    pub class: &'a Class,
+    pub class: &'a SimClass,
 }
 
 impl Ord for SimProcess<'_> {
@@ -41,7 +41,7 @@ impl Ord for SimProcess<'_> {
 }
 
 impl <'a> SimProcess<'a>  {
-    pub fn new(class: &'a Class) -> SimProcess<'a> {
+    pub fn new(class: &'a SimClass) -> SimProcess<'a> {
         SimProcess {state:State::WaitForNew, time: 0.1f64, class:class}
     }
     pub fn execute(mut self, system: &mut Simulator<'a>) -> bool

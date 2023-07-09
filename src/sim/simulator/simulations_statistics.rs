@@ -1,35 +1,86 @@
-use std::collections::{BTreeMap, LinkedList};
+use std::collections::{LinkedList};
 use std::fs::File;
 use std::io::prelude::*;
 use serde::{Deserialize, Serialize};
-use mongodb::{bson::doc, results, error};
+use mongodb::bson::{doc, Uuid};
 
 use crate::sim::model::class::{Class};
-use crate::sim::simulator::statistics::Statistics;
+use crate::sim::simulator::single_statistics::{StatisticsFinalized, Macrostate};
 
 #[derive(Serialize, Deserialize)]
-pub struct SimResultSingleV {
-    v: u32,
-    avg: Statistics,
-    dev: Statistics
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct SimResult
+pub struct SimStatisticsMultiV
 {
     pub tr_class: Class,
-    pub systems: LinkedList<SimResultSingleV>
+    pub results: LinkedList<StatisticsMultiSimulations>
 }
 
-impl SimResult {
-    pub fn new(tr_class :Class) -> SimResult {
-        SimResult {
-            tr_class: tr_class,
-            systems: LinkedList::new()
+/// Processed Statistics
+/// Base on many simulation series
+/// Holds average value or standard deviation
+#[derive(Serialize, Deserialize)]
+pub struct StatisticsMultiSimulations
+{
+    pub uuids: Vec<Uuid>,
+    pub v: usize,
+    pub states_avarage: Vec<Macrostate>,
+    pub states_deviation: Vec<Macrostate>,
+    pub no_of_events_avg: f64,
+    pub no_of_events_dev: f64
+}
+
+impl StatisticsMultiSimulations {
+    pub fn statistics_proc(statistics: &LinkedList<StatisticsFinalized>, v:usize) -> Self {
+        let no_of_series = statistics.len();
+        let mut result = StatisticsMultiSimulations {
+            uuids: statistics.into_iter().map(|x|x.metadata.uuid).collect(),
+            v: v,
+            states_avarage: vec![Macrostate::new(); v+1],
+            states_deviation: vec![Macrostate::new(); v+1],
+            no_of_events_avg: 0.0,
+            no_of_events_dev: 0.0
+        };
+
+        for stat_ser in statistics {
+            for (idx, stat_macr) in stat_ser.states.iter().enumerate() {
+                result.states_avarage[idx].p += stat_macr.p;
+                result.states_avarage[idx].out_new += stat_macr.out_new;
+                result.states_avarage[idx].out_end += stat_macr.out_end;
+            }
+            result.no_of_events_avg+= stat_ser.no_of_events as f64;
         }
+
+        for res_st in &mut result.states_avarage {
+            res_st.p /= no_of_series as f64;
+            res_st.out_new /= no_of_series as f64;
+            res_st.out_end /= no_of_series as f64;
+        }
+        result.no_of_events_avg /= no_of_series as f64;
+
+        for stat_ser in statistics {
+            for (idx, stat_macr) in stat_ser.states.iter().enumerate() {
+                result.states_deviation[idx].p += (result.states_avarage[idx].p - stat_macr.p).powi(2);
+                result.states_deviation[idx].out_new += (result.states_avarage[idx].out_new - stat_macr.out_new).powi(2);
+                result.states_deviation[idx].out_end += (result.states_avarage[idx].out_end - stat_macr.out_end).powi(2);
+            }
+            result.no_of_events_dev += (result.no_of_events_avg - stat_ser.no_of_events as f64).powi(2);
+        }
+
+        for res_st in &mut result.states_deviation {
+            res_st.p = (res_st.p / no_of_series as f64).sqrt();
+            res_st.out_new = (res_st.out_new / no_of_series as f64).sqrt();
+            res_st.out_end = (res_st.out_end / no_of_series as f64).sqrt();
+        }
+        result.no_of_events_dev = (result.no_of_events_dev / no_of_series as f64).sqrt();
+        result
     }
-    pub fn add(&mut self, v: u32, avg : Statistics, dev: Statistics) {
-        self.systems.push_back(SimResultSingleV{v: v, avg: avg, dev: dev});
+}
+
+impl SimStatisticsMultiV {
+    pub fn new(tr_class :Class) -> SimStatisticsMultiV {
+        SimStatisticsMultiV {
+            tr_class: tr_class,
+            results: LinkedList::new()
+        }
     }
 
     pub fn write_header(v_max :u32, output: &mut File)
@@ -91,7 +142,7 @@ impl SimResult {
 
     pub fn write(& self, output: &mut File)
     {
-        SimResult::write_sim_par(&self.tr_class, output);
+        SimStatisticsMultiV::write_sim_par(&self.tr_class, output);
         self.write_sim_prob(output);
         self.write_new_int(output);
         self.write_end_int(output);
@@ -102,15 +153,23 @@ impl SimResult {
     }
 
     fn write_sim_prob(& self, output: &mut File) {
-        let v_max = self.systems.iter().map(|x|x.v).max().unwrap();
+
+        let mut systems_v :LinkedList<StatisticsMultiSimulations>;
+        let v_max = self.results.iter().map(|x|x.v).max().unwrap();
         for v in 1..v_max+1 {
-            let item = self.systems.iter().find(|&x| x.v == v);
+            //systems_v.append(StatisticsMultiSimulations::statistics_proc(
+            //    self.systems.iter().filter(|item| item.v == v).map(|x| x.clone()).collect()));
+        }
+
+
+        for v in 1..v_max+1 {
+            let item = self.results.iter().find(|&x| x.v == v);
             match item {
                 Option::Some(itm) => {
-                    let val_avg = &itm.avg;
+                    let val_avg = &itm.states_avarage;
 
-                    for x in 0..val_avg.v+1 {
-                        output.write_fmt(format_args!("\t{}", val_avg.states[x].p)).
+                    for x in 0..v+1 {
+                        output.write_fmt(format_args!("\t{}", val_avg[x].p)).
                             expect("write_sim_prob failed");
                     }
                 }
@@ -125,15 +184,15 @@ impl SimResult {
     }
 
     fn write_sim_prob_dev(& self, output: &mut File) {
-        let v_max = self.systems.iter().map(|x|x.v).max().unwrap();
+        let v_max = self.results.iter().map(|x|x.v).max().unwrap();
         for v in 1..v_max+1 {
-            let item = self.systems.iter().find(|&x| x.v == v);
+            let item = self.results.iter().find(|&x| x.v == v);
             match item {
                 Option::Some(itm) => {
-                    let val_dev = &itm.dev;
+                    let val_dev = &itm.states_deviation;
 
-                    for x in 0..val_dev.v+1 {
-                        output.write_fmt(format_args!("\t{}", val_dev.states[x].p)).
+                    for x in 0..v+1 {
+                        output.write_fmt(format_args!("\t{}", val_dev[x].p)).
                             expect("write_sim_prob_dev failed");
                     }
                 }
@@ -148,15 +207,15 @@ impl SimResult {
     }
 
     fn write_new_int(& self, output: &mut File) {
-        let v_max = self.systems.iter().map(|x|x.v).max().unwrap();
+        let v_max = self.results.iter().map(|x|x.v).max().unwrap();
         for v in 1..v_max+1 {
-            let item = self.systems.iter().find(|&x| x.v == v);
+            let item = self.results.iter().find(|&x| x.v == v);
             match item {
                 Option::Some(itm) => {
-                    let val = &itm.avg;
+                    let val = &itm.states_avarage;
 
-                    for x in 0..val.v+1 {
-                        output.write_fmt(format_args!("\t{}", val.states[x].out_new)).
+                    for x in 0..v+1 {
+                        output.write_fmt(format_args!("\t{}", val[x].out_new)).
                             expect("Write New intensities failed");
                     }
                 }
@@ -171,15 +230,15 @@ impl SimResult {
     }
 
     fn write_new_int_dev(& self, output: &mut File) {
-        let v_max = self.systems.iter().map(|x|x.v).max().unwrap();
+        let v_max = self.results.iter().map(|x|x.v).max().unwrap();
         for v in 1..v_max+1 {
-            let item = self.systems.iter().find(|&x| x.v == v);
+            let item = self.results.iter().find(|&x| x.v == v);
             match item {
                 Option::Some(itm) => {
-                    let val = &itm.dev;
+                    let val = &itm.states_deviation;
 
-                    for x in 0..val.v+1 {
-                        output.write_fmt(format_args!("\t{}", val.states[x].out_new)).
+                    for x in 0..v+1 {
+                        output.write_fmt(format_args!("\t{}", val[x].out_new)).
                             expect("write_new_int_dev failed");
                     }
                 }
@@ -194,15 +253,15 @@ impl SimResult {
     }
 
     fn write_end_int(& self, output: &mut File) {
-        let v_max = self.systems.iter().map(|x|x.v).max().unwrap();
+        let v_max = self.results.iter().map(|x|x.v).max().unwrap();
         for v in 1..v_max+1 {
-            let item = self.systems.iter().find(|&x| x.v == v);
+            let item = self.results.iter().find(|&x| x.v == v);
             match item {
                 Option::Some(itm) => {
-                    let val = &itm.avg;
+                    let val = &itm.states_avarage;
 
-                    for x in 0..val.v+1 {
-                        output.write_fmt(format_args!("\t{}", val.states[x].out_end)).
+                    for x in 0..v+1 {
+                        output.write_fmt(format_args!("\t{}", val[x].out_end)).
                             expect("Write End intensities failed");
                     }
                 }
@@ -217,15 +276,15 @@ impl SimResult {
     }
 
     fn write_end_int_dev(& self, output: &mut File) {
-        let v_max = self.systems.iter().map(|x|x.v).max().unwrap();
+        let v_max = self.results.iter().map(|x|x.v).max().unwrap();
         for v in 1..v_max+1 {
-            let item = self.systems.iter().find(|&x| x.v == v);
+            let item = self.results.iter().find(|&x| x.v == v);
             match item {
                 Option::Some(itm) => {
-                    let val = &itm.dev;
+                    let val = &itm.states_deviation;
 
-                    for x in 0..val.v+1 {
-                        output.write_fmt(format_args!("\t{}", val.states[x].out_end)).
+                    for x in 0..v+1 {
+                        output.write_fmt(format_args!("\t{}", val[x].out_end)).
                             expect("write_end_int_dev failed");
                     }
                 }
