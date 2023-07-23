@@ -2,16 +2,14 @@
 name = "any_stream"
 authors = ["Adam Kaliszan adam.kaliszan@gmail.com"]
 readme = "https://github.com/adamkaliszan/anyStreamRust/blob/master/README.md"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 keywords = ["simulator", "teletraffic enginery"]
 description = """Single service loss system. Any type of arrival and service stream.
 This tool would provide height quality data for system without product form solution.
 Results could be usefull as training data in machine learning."""
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
-#map_first_last
 
 [lib]
 
@@ -21,6 +19,7 @@ approx = "0.5.1"
 assert_approx_eq = "1.1.0"
 btreemultimap = "0.1.1"
 cartesian = "0.2.1"
+confy = "0.3.1"
 flot = "0.1.3"
 float-cmp = "0.9.0"
 itertool = "0.1.0"
