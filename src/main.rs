@@ -18,6 +18,7 @@ use std::str::FromStr;
 use std::thread;
 use std::thread::{JoinHandle};
 use std::time::Instant;
+use clap::ValueHint::CommandString;
 use mongodb::options::CredentialBuilder;
 
 use crate::sim::model::class::{Class, StreamType, sim_class::SimClass};
@@ -28,15 +29,11 @@ use crate::sim::simulator::single_statistics::{Macrostate, StatisticsFinalized, 
 mod sim;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 #[clap(author, version, about)]
+#[command(author, version, about, long_about = None)]
+#[command(propagate_version = true)]
 struct Cli {
-
-    /// Output filename
-    #[clap(parse(from_os_str), short, long, default_value="results.txt")]
-    pub output_path: std::path::PathBuf,
-
     /// System capacity
     #[clap(short, default_value_t=10)]
     v: u32,
@@ -54,11 +51,11 @@ struct Cli {
     a_delta: f64,
 
     /// Arrival stream type
-    #[clap(long, default_value="uniform", multiple=true)]
+    #[clap(long, default_value="uniform")]
     call_stream: Vec<String>,
 
     /// Service stream type
-    #[clap(long, default_value="poisson", multiple=true)]
+    #[clap(long, default_value="poisson")]
     serv_stream: Vec<String>,
 
     /// Arrival stream parameters ExpectedValue²/Variance² initial value
@@ -97,26 +94,40 @@ struct Cli {
     #[clap(short, default_value_t=8)]
     threads_no: u32,
 
-    /// Mongo URI
-    #[clap(long, default_value="mongodb://192.168.1.39")]
-    mongo_uri: String,
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
 
-    /// Mongo database name
-    #[clap(long, default_value="anystream")]
-    mongo_database: String,
+#[derive(Subcommand)]
+enum Commands {
+    /// Save results (training data) to CSV. Each row contains following capacities: 1, 2, 3, ..., v
+    OutCsv {
+        /// Output filename
+        #[clap(short, long, default_value="results.txt")]
+        output_path: std::path::PathBuf,
+    },
+    ConfigureMongo {
+        /// Mongo URI
+        #[clap(long, default_value="mongodb://192.168.1.39")]
+        mongo_uri: String,
+
+        /// Mongo database name
+        #[clap(long, default_value="anystream")]
+        mongo_database: String,
+    }
 }
 
 #[derive(Serialize, Deserialize)]
 struct MyConfig {
-    mongodb: String,
-    username: String,
+    mongo_uri: String,
+    mongo_database: String,
 }
 
 impl ::std::default::Default for MyConfig {
     fn default() -> Self {
         Self {
-            mongodb: "192.168.1.39".into(),
-            username: "adam".into()
+            mongo_uri: "192.168.1.39".into(),
+            mongo_database: "anystream".into()
         }
     }
 }
@@ -178,10 +189,7 @@ fn read_finilized_statistics(model: &ModelDescription, db: &mongodb::sync::Datab
         .collect()
 }
 
-fn generate_csv(args: Cli, results: BTreeMultiMap<ModelDescription, StatisticsFinalized>) -> std::io::Result<()> {
-    let mut file = File::create(args.output_path.clone())?;
-    SimStatisticsMultiV::write_header(args.v, &mut file);
-
+fn generate_ML_results(results: BTreeMultiMap<ModelDescription, StatisticsFinalized>) -> BTreeMap<Class, SimStatisticsMultiV> {
     let mut final_results: BTreeMap<Class, SimStatisticsMultiV> = BTreeMap::new();
 
     for (key, values) in results {
@@ -192,15 +200,21 @@ fn generate_csv(args: Cli, results: BTreeMultiMap<ModelDescription, StatisticsFi
                 itm.results.push_back(stat_signel_v);
             },
             None => {
-                let mut aggregatetResult:SimStatisticsMultiV = SimStatisticsMultiV::new(key.class);
+                let mut aggregated_result:SimStatisticsMultiV = SimStatisticsMultiV::new(key.class);
                 let stat_signel_v = StatisticsMultiSimulations::statistics_proc(&values.into_iter().collect(), key.v);
-                aggregatetResult.results.push_back(stat_signel_v);
-                final_results.insert(key.class, aggregatetResult);
+                aggregated_result.results.push_back(stat_signel_v);
+                final_results.insert(key.class, aggregated_result);
             }
         }
     }
+    final_results
+}
 
-    for (key, value) in final_results {
+fn generate_ml_csv(filename: &std::path::PathBuf, v:u32, results: &BTreeMap<Class, SimStatisticsMultiV>) -> std::io::Result<()> {
+    let mut file = File::create(filename)?;
+    SimStatisticsMultiV::write_header(v, &mut file);
+
+    for (key, value) in results {
         println!("Writing to file statistics for {:?}", key);
         value.write(&mut file);
     }
@@ -306,7 +320,7 @@ fn calculate(no_of_threads:u32, mut tasks: LinkedList<SimulationTask>, db: &mut 
 fn main() -> std::io::Result<()>
 {
     let args = Cli::parse();
-    let cfg = match confy::load(env!("CARGO_PKG_NAME")) {
+    let mut cfg = match confy::load(env!("CARGO_PKG_NAME")) {
         Ok(config) => config,
         Err(e) => {
             println!("Failed to load config: {e}");
@@ -314,12 +328,26 @@ fn main() -> std::io::Result<()>
         }
     };
 
-    let mut db: Option<mongodb::sync::Database> = mongo_open_database(&args.mongo_uri, &args.mongo_database);
-    let mut results: BTreeMultiMap<ModelDescription, StatisticsFinalized> = BTreeMultiMap::new();
+    match &args.command {
+        Some(Commands::OutCsv {output_path}) => {
+            let mut db: Option<mongodb::sync::Database> = mongo_open_database(&cfg.mongo_uri, &cfg.mongo_database);
+            let mut results: BTreeMultiMap<ModelDescription, StatisticsFinalized> = BTreeMultiMap::new();
 
-    let mut tasks = prepare_tasks(&args, &db, &mut results);
-    calculate(args.threads_no, tasks, &mut db, &mut results);
+            let mut tasks = prepare_tasks(&args, &db, &mut results);
+            calculate(args.threads_no, tasks, &mut db, &mut results);
 
-    generate_csv(args, results)
+            let final_results = generate_ML_results(results);
+
+            generate_ml_csv(output_path, args.v, &final_results)
+        }
+        Some(Commands::ConfigureMongo {mongo_uri, mongo_database}) => {
+            cfg.mongo_uri = mongo_uri.to_string();
+            cfg.mongo_database = mongo_database.to_string();
+            confy::store(env!("CARGO_PKG_NAME"), cfg)
+        }
+        None => {
+            Ok(())
+        }
+    }
 }
 
