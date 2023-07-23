@@ -67,11 +67,11 @@ impl StatisticsFinalized {
         let collection = db.collection::<StatisticsFinalizedWithInputModel>("statistics");
 
         let filter = bson::to_document(model).unwrap();
-        let mut finalFilter: Document = bson::Document::new();
-        finalFilter.insert("system", filter);
+        let mut final_filter: Document = bson::Document::new();
+        final_filter.insert("system", filter);
 
         let find_options = FindOptions::builder().sort(doc! { "system": 1 }).build();
-        let mut cursor = collection.find(finalFilter, find_options).unwrap();
+        let mut cursor = collection.find(final_filter, find_options).unwrap();
 
         while let Some(itm) = cursor.next() {
             match itm {
