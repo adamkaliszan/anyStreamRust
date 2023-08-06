@@ -18,8 +18,10 @@ use std::str::FromStr;
 use std::thread;
 use std::thread::{JoinHandle};
 use std::time::Instant;
+use clap::builder::Str;
 use clap::ValueHint::CommandString;
-use mongodb::options::CredentialBuilder;
+use mongodb::options::{AuthMechanism, CredentialBuilder};
+use mongodb::sync;
 
 use crate::sim::model::class::{Class, StreamType, sim_class::SimClass};
 use crate::sim::model::system::ModelDescription;
@@ -34,6 +36,12 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[command(author, version, about, long_about = None)]
 #[command(propagate_version = true)]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Parser)]
+struct SimulateArgs {
     /// System capacity
     #[clap(short, default_value_t=10)]
     v: u32,
@@ -94,26 +102,61 @@ struct Cli {
     #[clap(short, default_value_t=8)]
     threads_no: u32,
 
-    #[command(subcommand)]
-    command: Option<Commands>,
+    /// Save results (training data) to CSV. Each row contains following capacities: 1, 2, 3, ..., v
+    /// Output filename
+    #[clap(short, long, default_value="results.txt")]
+    output_path: std::path::PathBuf,
+}
+
+#[derive(Parser)]
+struct ConfigureMongoArgss {
+    /// Mongo URI
+    #[clap(long, default_value="mongodb://adamkaliszan.pl")]
+    mongo_uri: String,
+
+    /// Mongo database name
+    #[clap(long, default_value="anystream")]
+    mongo_database: String,
+
+    /// Mongo username
+    #[clap(long, default_value=None)]
+    username: Option<String>,
+
+    /// Mongo password
+    #[clap(long, default_value=None)]
+    password: Option<String>,
+
+    /// Mongo authentication database
+    #[clap(long, default_value=None)]
+    auth_source: Option<String>,
+
+    /// Mongo authentication database
+    #[clap(long, default_value=None)]
+    auth_mechanism: Option<String>,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Save results (training data) to CSV. Each row contains following capacities: 1, 2, 3, ..., v
-    OutCsv {
-        /// Output filename
-        #[clap(short, long, default_value="results.txt")]
-        output_path: std::path::PathBuf,
-    },
-    ConfigureMongo {
-        /// Mongo URI
-        #[clap(long, default_value="mongodb://192.168.1.39")]
-        mongo_uri: String,
+    Simulate (SimulateArgs),
+    ConfigureMongo (ConfigureMongoArgss)
+}
 
-        /// Mongo database name
-        #[clap(long, default_value="anystream")]
-        mongo_database: String,
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum CfgAuthMechanism {
+    ScramSha1,
+    ScramSha265,
+    None
+}
+
+impl FromStr for CfgAuthMechanism {
+    type Err = ();
+    fn from_str(input: &str) -> core::result::Result<CfgAuthMechanism, Self::Err> {
+        match input {
+            "sha1" => Ok(CfgAuthMechanism::ScramSha1),
+            "sha256" => Ok(CfgAuthMechanism::ScramSha265),
+            "none" => Ok(CfgAuthMechanism::None),
+            _      => Err(()),
+        }
     }
 }
 
@@ -121,13 +164,21 @@ enum Commands {
 struct MyConfig {
     mongo_uri: String,
     mongo_database: String,
+    mongo_user: Option<String>,
+    mongo_password: Option<String>,
+    mongo_auth_database: Option<String>,
+    mongo_auth_mechanism: Option<CfgAuthMechanism>,
 }
 
 impl ::std::default::Default for MyConfig {
     fn default() -> Self {
         Self {
-            mongo_uri: "192.168.1.39".into(),
-            mongo_database: "anystream".into()
+            mongo_uri: "mongodb://192.168.1.39".into(),
+            mongo_database: "anystream".into(),
+            mongo_user: Some("anonymus".into()),
+            mongo_password: Some("password".into()),
+            mongo_auth_database: Some("anystream".into()),
+            mongo_auth_mechanism: Some(CfgAuthMechanism::ScramSha265)
         }
     }
 }
@@ -139,7 +190,7 @@ struct SimulationTask {
     sim_no: u32
 }
 
-fn mongo_open_database(mongo_uri: &String, mongo_db: &String) -> Option<mongodb::sync::Database> {
+fn mongo_open_database(mongo_uri: &String, mongo_db: &String, credentials: Option<Credential>) -> Option<mongodb::sync::Database> {
     let mut client_options = match ClientOptions::parse(mongo_uri) {
         Ok(co) => co,
         Err(e) => {
@@ -147,10 +198,8 @@ fn mongo_open_database(mongo_uri: &String, mongo_db: &String) -> Option<mongodb:
             return None;
         }
     };
+   client_options.credential = credentials;
 
-    //let mut credential = Credential::builder().build();
-    //credential.username = Some(str!("adam"));
-    // Set the server_api field of the client_options object to Stable API version 1
     let server_api = ServerApi::builder().version(ServerApiVersion::V1).build();
     client_options.server_api = Some(server_api);
     //client_options.credential = Some(credential);
@@ -226,7 +275,7 @@ fn generate_ml_csv(filename: &std::path::PathBuf, v:u32, results: &BTreeMap<Clas
 
 /// Prepares tasks.
 /// First check if the results are available in database
-fn prepare_tasks(args: &Cli, db: &Option<mongodb::sync::Database>, results: &mut BTreeMultiMap<ModelDescription, StatisticsFinalized>) -> LinkedList<SimulationTask> {
+fn prepare_tasks(args: &SimulateArgs, db: &Option<mongodb::sync::Database>, results: &mut BTreeMultiMap<ModelDescription, StatisticsFinalized>) -> LinkedList<SimulationTask> {
     let mut tasks: LinkedList<SimulationTask> = LinkedList::new();
 
     let call_streams = args.call_stream.clone();
@@ -329,8 +378,19 @@ fn main() -> std::io::Result<()>
     };
 
     match &args.command {
-        Some(Commands::OutCsv {output_path}) => {
-            let mut db: Option<mongodb::sync::Database> = mongo_open_database(&cfg.mongo_uri, &cfg.mongo_database);
+        Some(Commands::Simulate(args)) => {
+            let mut credentials  = Credential::default();
+            credentials.username = cfg.mongo_user;
+            credentials.source = cfg.mongo_auth_database;
+            credentials.password = cfg.mongo_password;
+            credentials.mechanism = match cfg.mongo_auth_mechanism {
+                Some(CfgAuthMechanism::ScramSha1) => { Some(AuthMechanism::ScramSha1)},
+                Some(CfgAuthMechanism::ScramSha265) => { Some(AuthMechanism::ScramSha256)},
+                Some(CfgAuthMechanism::None) => { None },
+                None => { None }
+            };
+
+            let mut db: Option<mongodb::sync::Database> = mongo_open_database(&cfg.mongo_uri, &cfg.mongo_database, Some(credentials));
             let mut results: BTreeMultiMap<ModelDescription, StatisticsFinalized> = BTreeMultiMap::new();
 
             let mut tasks = prepare_tasks(&args, &db, &mut results);
@@ -338,11 +398,25 @@ fn main() -> std::io::Result<()>
 
             let final_results = generate_ML_results(results);
 
-            generate_ml_csv(output_path, args.v, &final_results)
+            generate_ml_csv(&args.output_path, args.v, &final_results)
         }
-        Some(Commands::ConfigureMongo {mongo_uri, mongo_database}) => {
-            cfg.mongo_uri = mongo_uri.to_string();
-            cfg.mongo_database = mongo_database.to_string();
+        Some(Commands::ConfigureMongo (mongo_config)) => {
+            cfg.mongo_uri = mongo_config.mongo_uri.to_string();
+            cfg.mongo_database = mongo_config.mongo_database.to_string();
+            cfg.mongo_user = mongo_config.username.clone();
+            cfg.mongo_password = mongo_config.password.clone();
+            cfg.mongo_auth_database = mongo_config.auth_source.clone();
+            cfg.mongo_auth_mechanism =
+                if let Some(auth_mechanizm_str) = &mongo_config.auth_mechanism {
+                match CfgAuthMechanism::from_str(&auth_mechanizm_str.to_lowercase())
+                {
+                    Ok(val) => Some(val),
+                    Err(_) => {
+                        println!("Failed to parse authentycation mechanizm: {}", auth_mechanizm_str);
+                        None
+                    }
+                }
+            } else { None };
             confy::store(env!("CARGO_PKG_NAME"), cfg)
         }
         None => {
