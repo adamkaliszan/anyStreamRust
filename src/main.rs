@@ -111,7 +111,7 @@ struct SimulateArgs {
 #[derive(Parser)]
 struct ConfigureMongoArgss {
     /// Mongo URI
-    #[clap(long, default_value="mongodb://adamkaliszan.pl")]
+    #[clap(long, default_value="mongodb://mongo.adamkaliszan.pl")]
     mongo_uri: String,
 
     /// Mongo database name
@@ -173,7 +173,7 @@ struct MyConfig {
 impl ::std::default::Default for MyConfig {
     fn default() -> Self {
         Self {
-            mongo_uri: "mongodb://192.168.1.39".into(),
+            mongo_uri: "mongodb://mongo.adamkaliszan.pl".into(),
             mongo_database: "anystream".into(),
             mongo_user: Some("anonymus".into()),
             mongo_password: Some("password".into()),
@@ -227,6 +227,7 @@ fn mongo_open_database(mongo_uri: &String, mongo_db: &String, credentials: Optio
         }
     }
 }
+
 fn read_finilized_statistics(model: &ModelDescription, db: &mongodb::sync::Database, min_no_of_events_per_state: u32) -> LinkedList<StatisticsFinalized> {
     let stats = StatisticsFinalized::read_mongo(model, db);
     stats.into_iter()
